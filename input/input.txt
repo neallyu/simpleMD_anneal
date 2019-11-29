@@ -1,0 +1,7 @@
+Particle_number          13
+Box_size                 10
+Init_Temperatrue         50
+Temperature              0
+Time_interval            0.0001
+Equilibration_time       1000
+Total_time               1000

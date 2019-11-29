@@ -5,7 +5,7 @@
 #include <vector>
 #include <cmath>
 #include <string>
-#include "ensemble_reduced_unit.hpp"
+#include "ensemble.hpp"
 #include "utils.hpp"
 
 using namespace std;

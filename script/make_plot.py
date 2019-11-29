@@ -1,3 +1,4 @@
+from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 import numpy as np
 import sys, time
@@ -17,6 +18,7 @@ def energy_plot(path, input_filename):
     ax.plot(time, potential, color="orange", label="potential", linestyle=":")
     ax.plot(time, kinetic, color="blue", label="kinetic", linestyle="-.")
     ax.plot(time, total_energy, label="total energy", color="green")
+    ax.plot([0 for i in time], color="black")
 
     ax.set_xlabel("time")
     ax.set_ylabel("energy")
@@ -154,6 +156,28 @@ def velocity_autocorr_plot(path, input_filename):
     plt.clf()
 
 
+def ThreeDPlot(path, input_filename):
+    data = np.loadtxt(path + input_filename)
+
+    xs = data[:, 0]
+    ys = data[:, 1]
+    zs = data[:, 2]
+
+    fig = plt.figure(1, dpi=500, figsize=(7.4, 4.8), facecolor="white")
+    ax = fig.add_subplot(111, projection="3d")
+
+    for i in range(len(xs)):
+        ax.scatter(xs[i], ys[i], zs[i], color="green")
+
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    ax.set_zlabel("Z")
+
+    # plt.legend()
+    plt.savefig(path + input_filename[:-4] + ".png")
+    plt.clf()
+
+
 def mk_plot(path, filename, plot_function):
     print("[MD Script]", time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), "Plotting", filename)
     plot_function(path, filename)
@@ -165,6 +189,7 @@ if __name__ == "__main__":
     mk_plot(path, "energy.csv", energy_plot)
     mk_plot(path, "temperature.csv", temperature_plot)
     mk_plot(path, "particle.csv", particle_plot)
-    mk_plot(path, "msd.csv", msd_plot)
-    mk_plot(path, "rdf.csv", rdf_plot)
-    mk_plot(path, "velocity_autocorr.csv", velocity_autocorr_plot)
+    # mk_plot(path, "coordinates.csv", ThreeDPlot)
+    # mk_plot(path, "msd.csv", msd_plot)
+    # mk_plot(path, "rdf.csv", rdf_plot)
+    # mk_plot(path, "velocity_autocorr.csv", velocity_autocorr_plot)

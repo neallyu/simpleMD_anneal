@@ -17,8 +17,6 @@ public:
     // Copy initializer
     Particle(const Particle&);
 
-    // Particle& operator= (const Particle&);
-
     // calculate x from v and a
     inline void movement();
 
@@ -62,21 +60,6 @@ Particle::Particle(double _time_interval):
 // Copy initializer
 Particle::Particle(const Particle& other): v_x(other.v_x), v_y(other.v_y), v_z(other.v_z), pos_x(other.pos_x), pos_y(other.pos_y),
     pos_z(other.pos_z), a_x_B(other.a_x_B), a_y_B(other.a_y_B), a_z_B(other.a_z_B), time_interval(other.time_interval) { }
-
-
-// Particle& Particle::operator=(const Particle& other) {
-//     v_x = other.v_x;
-//     v_y = other.v_y;
-//     v_z = other.v_z;
-//     pos_x = other.pos_x;
-//     pos_y = other.pos_y;
-//     pos_z = other.pos_z;
-//     a_x_B = other.a_x_B;
-//     a_y_B = other.a_y_B;
-//     a_z_B = other.a_z_B;
-//     time_interval = other.time_interval;
-//     return *this;
-// }
 
 
 // execute movement
