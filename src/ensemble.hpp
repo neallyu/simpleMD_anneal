@@ -47,17 +47,11 @@ public:
 
     inline void Andersen_thermostat(double targetTEMP, double collision_frequency);
 
-    inline void freeze_particle();
-
     inline void recenter();
 
-    inline void central_force_field(Particle& particle);
+    inline void calc_potential_gradient();
 
-    inline double potential_gradient(Particle &particle1, Particle& particle2);
-
-    inline double calc_potential_value();
-
-    inline double calc_potential_change();
+    inline vector<double> calc_potential_gradient_norm_2();
 
     inline void conjugated_gradient_minimization();
 
@@ -88,7 +82,6 @@ private:
     // Rdf rdf;                                        // object of radial distribution function
     // Property property;                              // object of mean squared displacement calculation
     double ensemble_potential;                      // potential energy of ensemble
-    double former_ensemble_potential;               // former potential energy of ensemble
     double ensemble_kinetic;                        // kinetic energy of ensemble
     ofstream ensemble_out;                          // output file stream of energy
     ofstream particle_out;                          // output file stream of trajectory of selected particle
@@ -320,64 +313,89 @@ void Ensemble::Andersen_thermostat(double target_TEMP, double collision_frequenc
 }
 
 
-double Ensemble::calc_potential_value() {
-    #pragma omp parallel for
-    for (int i = 0; i < particle_number; ++i) {
-        ensemble[i].potential_value = 0;
-    }
 
+void Ensemble::calc_potential_gradient() {
     #pragma omp parallel for
     for (int i = 0; i < particle_number - 1; ++i) {
-        for (int j = i + 1; j < particle_number; ++j) {
+        for (auto j = i + 1; j < particle_number; ++j) {
             calc_acceleration(ensemble[i], ensemble[j]);
         }
     }
-    
-    double ensemble_potential_value(0);
-    #pragma omp parallel for
-    for (int i = 0; i < particle_number; ++i) {
-        ensemble_potential_value += ensemble[i].potential_value;
-    }
-
-    return ensemble_potential_value;
 }
 
 
-double Ensemble::potential_gradient(Particle &particle1, Particle& particle2) {
-    double dx = particle1.pos_x - particle2.pos_x;
-    double dy = particle1.pos_y - particle2.pos_y;
-    double dz = particle1.pos_z - particle2.pos_z;
-
-    double r2 = dx * dx + dy * dy + dz * dz;
-    double r2i = 1 / r2;
-    double ri = sqrt(r2i);
-    double r6i = pow(r2i, 3);
-
-    return -48.0 * r6i * ri * (r6i - 0.5);
+vector<double> Ensemble::calc_potential_gradient_norm_2() {
+    vector<double> norm_2(2, 0);
+    #pragma omp parallel for
+    for (int i = 0; i < particle_number; ++i) {
+        norm_2[0] += pow(ensemble[i].a_x_A, 2) + pow(ensemble[i].a_y_A, 2) + pow(ensemble[i].a_z_A, 2);
+        norm_2[1] += pow(ensemble[i].a_x_B, 2) + pow(ensemble[i].a_y_B, 2) + pow(ensemble[i].a_z_B, 2);
+    }
+    return norm_2;
 }
 
 
 void Ensemble::conjugated_gradient_minimization() {
-    // initialize d
-    double g_i(0), g_ii(0), d_i(0), d_ii(0), step_size(1e-9), precision(1e-6);
+    double step_size(1e-9), precision_2(1e-18);
+
+    // initialize d_i
     #pragma omp parallel for
     for (int i = 0; i < particle_number - 1; ++i) {
-        for (int j = i + 1; i < particle_number; ++j) {
-            d_i -= potential_gradient(ensemble[i], ensemble[j]);
+        for (auto j = i + 1; j < particle_number; ++j) {
+            calc_acceleration(ensemble[i], ensemble[j]);
         }
     }
+    #pragma omp parallel for
+    for (int i = 0; i < particle_number; ++i) {
+        ensemble[i].d_x_A = ensemble[i].a_x_B;
+        ensemble[i].d_y_A = ensemble[i].a_y_B;
+        ensemble[i].d_z_A = ensemble[i].a_z_B;
+    }
 
-    former_ensemble_potential = 0;
-    ensemble_potential = calc_potential_value();
+    vector<double> g = calc_potential_gradient_norm_2();
 
-    while ( ensemble_potential - former_ensemble_potential < precision) {
+    // minimal condition is the norm of gradient of fx closes to zero
+    while (g[0] > precision_2) {
+        #pragma omp parallel for
+        for (int i = 0; i < particle_number; ++i) {
+            // x propagation: x_(i+1) = x_i + step_size * d_i
+            ensemble[i].pos_x += step_size * ensemble[i].d_x_A;
+            ensemble[i].pos_y += step_size * ensemble[i].d_y_A;
+            ensemble[i].pos_z += step_size * ensemble[i].d_z_A;
+
+            // record a_A and initialize a_B
+            ensemble[i].a_x_A = ensemble[i].a_x_B;
+            ensemble[i].a_y_A = ensemble[i].a_y_B;
+            ensemble[i].a_z_A = ensemble[i].a_z_B;
+            ensemble[i].a_x_B = 0;
+            ensemble[i].a_y_B = 0;
+            ensemble[i].a_z_B = 0;
+        }
+
+        // calculate g_(i+1)
+        #pragma omp parallel for
+        for (int i = 0; i < particle_number - 1; ++i) {
+            for (auto j = i + 1; j < particle_number; ++j) {
+                calc_acceleration(ensemble[i], ensemble[j]);
+            }
+        }
+
+        g = calc_potential_gradient_norm_2();
+        double beta_i = g[1] / g[0];
         
+        // d propagation: d_(i+1) = a_(i+1) + norm_2(a_(i+1)) / norm_2(a_i) * d_i
+        #pragma omp parallel for
+        for (int i = 0; i < particle_number; ++i) {
+            ensemble[i].d_x_B = ensemble[i].a_x_B + beta_i * ensemble[i].d_x_A;
+            ensemble[i].d_x_B = ensemble[i].a_x_B + beta_i * ensemble[i].d_x_A;
+            ensemble[i].d_x_B = ensemble[i].a_x_B + beta_i * ensemble[i].d_x_A;
+        }
     }
 }
 
 
 double Ensemble::temperature_decreasing_curve(unsigned long i) {
-    return pow(EQUILIBRATION_ITERATION - i, 2) * INIT_TEMP / EQUILIBRATION_ITERATION_2;
+    return pow(EQUILIBRATION_ITERATION - i, 3) * INIT_TEMP / EQUILIBRATION_ITERATION_2;
 }
 
 
@@ -408,7 +426,7 @@ void Ensemble::coordinates_output(ofstream& fout) {
     fout << endl;
     fout << "loop_\n_atom_site_label\n_atom_site_fract_x\n_atom_site_fract_y\n_atom_site_fract_z" << endl;
     for (auto it = ensemble.begin(); it != ensemble.end(); ++it) {
-        fout << "I " << (it->pos_x / BOX) << " " << (it->pos_y / BOX) << " " << (it->pos_z / BOX) << endl;
+        fout << "O " << (it->pos_x / BOX) << " " << (it->pos_y / BOX) << " " << (it->pos_z / BOX) << endl;
     }
 }
 
@@ -441,9 +459,6 @@ void Ensemble::iteration() {
             sumv_z += ensemble[i].v_z;
             sumv2 += ensemble[i].v_x * ensemble[i].v_x + ensemble[i].v_y * ensemble[i].v_y + ensemble[i].v_z * ensemble[i].v_z;
             // execute x and v propagation
-            // if (temp > 3) {
-                // central_force_field(ensemble[i]);
-            // }
             ensemble[i].movement();
             ensemble[i].velocity();
             if (temp > 1e-3) {
@@ -476,7 +491,7 @@ void Ensemble::iteration() {
 
         // decrease the temperature following a parabolic curve
         if (i < EQUILIBRATION_ITERATION) {
-            if (temp > 1) {
+            if (temp > 2) {
                 Andersen_thermostat(temp, 0.5);
             } else {
                 rescale_temperature(temp);
