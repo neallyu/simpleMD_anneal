@@ -337,7 +337,7 @@ vector<double> Ensemble::calc_potential_gradient_norm_2() {
 void Ensemble::conjugated_gradient_minimization() {
     cout << "[MD LOG] " << get_current_time() << "\tConjugated gradient optimization started..." << endl;
 
-    double step_size(1e-9), precision_2(1e-18);
+    double step_size(1e-60), precision_2(1e-2);
 
     // initialize d_i
     #pragma omp parallel for
@@ -354,6 +354,7 @@ void Ensemble::conjugated_gradient_minimization() {
     }
 
     vector<double> g = calc_potential_gradient_norm_2();
+    cout << "gradient_norm_2: " << g[0] << endl;
     int count(0);
 
     // minimal condition is the norm of gradient of fx closes to zero

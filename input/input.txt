@@ -1,5 +1,5 @@
 Particle_number          13
-Box_size                 8
+Box_size                 10
 Init_Temperatrue         50
 Temperature              0
 Time_interval            0.0001
