@@ -9,8 +9,6 @@
 #include <random>
 #include <omp.h>
 #include "particle.hpp"
-// #include "radial_distribution_function.hpp"
-// #include "property.hpp"
 #include "utils.hpp"
 
 using namespace std;
@@ -409,7 +407,7 @@ void Ensemble::conjugated_gradient_minimization() {
 
 
 double Ensemble::temperature_decreasing_curve(unsigned long i) {
-    return pow(EQUILIBRATION_ITERATION - i, 3) * INIT_TEMP / EQUILIBRATION_ITERATION_2;
+    return pow(EQUILIBRATION_ITERATION - i, 2) * INIT_TEMP / EQUILIBRATION_ITERATION_2;
 }
 
 
@@ -510,7 +508,7 @@ void Ensemble::iteration() {
 
         // decrease the temperature following a parabolic curve
         if (i < EQUILIBRATION_ITERATION) {
-            if (temp > 2) {
+            if (temp > 1) {
                 Andersen_thermostat(temp, 0.5);
             } else {
                 rescale_temperature(temp);
