@@ -17,10 +17,6 @@ using namespace std;
 
 class Ensemble {
 
-friend class Neighborlist;
-friend class Rdf;
-friend class Property;
-
 public:
     // reduced unit
     Ensemble(const unsigned _particle_number, double _box, double init_temp, double set_temp, double time_interval, 
@@ -80,8 +76,6 @@ private:
     const unsigned long SAMPLE_RATE;                // sample rate defined as (iteration / 1000) such that the result contains 1000 points
     float ITERATION_PERCENTAGE;                      // percentage of main iteration
     vector<Particle> ensemble;                      // main container of the particle ensemble
-    // Rdf rdf;                                        // object of radial distribution function
-    // Property property;                              // object of mean squared displacement calculation
     double ensemble_potential;                      // potential energy of ensemble
     double ensemble_kinetic;                        // kinetic energy of ensemble
     ofstream ensemble_out;                          // output file stream of energy
@@ -261,7 +255,7 @@ void Ensemble::rebounce(Particle &particle) {
 
 void Ensemble::recenter() {
     double pos_x_center(0), pos_y_center(0), pos_z_center(0);
-    // #pragma omp parallel for
+    #pragma omp parallel for
     for (int i = 0; i < particle_number; ++i) {
         pos_x_center += ensemble[i].pos_x;
         pos_y_center += ensemble[i].pos_y;
