@@ -62,6 +62,7 @@ public:
     inline void particle_movement_output(unsigned long i, Particle& particle, ofstream& fout);
     inline void temperature_output(unsigned long i, ofstream& fout);
     inline void coordinates_output(ofstream& fout);
+    inline void potential_gradient_norm_output(int count, double norm, ofstream& fout);
 
 private:
     // all variable below are in reduced unit
@@ -87,7 +88,8 @@ private:
     ofstream particle_out;                          // output file stream of trajectory of selected particle
     ofstream temperature_out;                       // output file stream of temperature
     ofstream coordinates_out;                       // output file stream of coordinates of particles
-    // ofstream msd_out;                               // output file stream of mean square displacement
+    ofstream coordinates_out_CG;                    // output file stream of coordinates after CG optimization
+    ofstream potential_gradient_norm_out;           // output file stream of potential gradient norm
 };
 
 // reduced unit
@@ -109,8 +111,9 @@ Ensemble::Ensemble(const unsigned _particle_number, double _box, double init_tem
     ensemble_out(_output_path + "/energy.csv"),
     particle_out(_output_path + "/particle.csv"),
     temperature_out(_output_path + "/temperature.csv"),
-    coordinates_out(_output_path + "/coordinates.cif")
-    // msd_out(_output_path + "/msd.csv")
+    coordinates_out(_output_path + "/coordinates.cif"),
+    coordinates_out_CG(_output_path + "/coordinates_after_CG.cif"),
+    potential_gradient_norm_out(_output_path + "/potential_gradient_norm.csv")
     {
         cout << "[MD LOG] " << get_current_time() << "\tEquilibration iteration: " << EQUILIBRATION_ITERATION << endl;
         cout << "[MD LOG] " << get_current_time() << "\tIteration: " << ITERATION << endl;
@@ -120,6 +123,8 @@ Ensemble::Ensemble(const unsigned _particle_number, double _box, double init_tem
         cout << "[MD LOG] " << get_current_time() << "\tParticle trajectory data output to \"" + _output_path + "/particle.csv\" ..." << endl;
         cout << "[MD LOG] " << get_current_time() << "\tTemperature data output to \"" + _output_path + "/temperature.csv\" ..." << endl;
         cout << "[MD LOG] " << get_current_time() << "\tCoordinates data output to \"" + _output_path + "/coordinates.cif\" ..." << endl;
+        cout << "[MD LOG] " << get_current_time() << "\tCoordinates data output to \"" + _output_path + "/coordinates_after_CG.cif\" ..." << endl;
+        cout << "[MD LOG] " << get_current_time() << "\tCoordinates data output to \"" + _output_path + "/potential_gradient_norm.csv\" ..." << endl;
 
         // parallel
         omp_set_num_threads(32);
@@ -160,6 +165,8 @@ Ensemble::~Ensemble() {
     particle_out.close();
     temperature_out.close();
     coordinates_out.close();
+    coordinates_out_CG.close();
+    potential_gradient_norm_out.close();
     cout << "[MD LOG] " << get_current_time() << "\tOutput file saved" << endl;
 }
 
@@ -336,6 +343,8 @@ vector<double> Ensemble::calc_potential_gradient_norm_2() {
 
 
 void Ensemble::conjugated_gradient_minimization() {
+    cout << "[MD LOG] " << get_current_time() << "\tConjugated gradient optimization started..." << endl;
+
     double step_size(1e-9), precision_2(1e-18);
 
     // initialize d_i
@@ -353,9 +362,13 @@ void Ensemble::conjugated_gradient_minimization() {
     }
 
     vector<double> g = calc_potential_gradient_norm_2();
+    int count(0);
 
     // minimal condition is the norm of gradient of fx closes to zero
     while (g[0] > precision_2) {
+
+        potential_gradient_norm_output(count, g[0], potential_gradient_norm_out);
+
         #pragma omp parallel for
         for (int i = 0; i < particle_number; ++i) {
             // x propagation: x_(i+1) = x_i + step_size * d_i
@@ -372,7 +385,7 @@ void Ensemble::conjugated_gradient_minimization() {
             ensemble[i].a_z_B = 0;
         }
 
-        // calculate g_(i+1)
+        // calculate g_(i+1) 
         #pragma omp parallel for
         for (int i = 0; i < particle_number - 1; ++i) {
             for (auto j = i + 1; j < particle_number; ++j) {
@@ -386,11 +399,18 @@ void Ensemble::conjugated_gradient_minimization() {
         // d propagation: d_(i+1) = a_(i+1) + norm_2(a_(i+1)) / norm_2(a_i) * d_i
         #pragma omp parallel for
         for (int i = 0; i < particle_number; ++i) {
+            ensemble[i].d_x_A = ensemble[i].d_x_B;
+            ensemble[i].d_y_A = ensemble[i].d_y_B;
+            ensemble[i].d_z_A = ensemble[i].d_z_B;
             ensemble[i].d_x_B = ensemble[i].a_x_B + beta_i * ensemble[i].d_x_A;
             ensemble[i].d_x_B = ensemble[i].a_x_B + beta_i * ensemble[i].d_x_A;
             ensemble[i].d_x_B = ensemble[i].a_x_B + beta_i * ensemble[i].d_x_A;
         }
+        count++;
     }
+
+    coordinates_output(coordinates_out_CG);
+    cout << "[MD LOG] " << get_current_time() << "\tConjugated gradient optimization finished." << endl;
 }
 
 
@@ -428,6 +448,11 @@ void Ensemble::coordinates_output(ofstream& fout) {
     for (auto it = ensemble.begin(); it != ensemble.end(); ++it) {
         fout << "O " << (it->pos_x / BOX) << " " << (it->pos_y / BOX) << " " << (it->pos_z / BOX) << endl;
     }
+}
+
+
+void Ensemble::potential_gradient_norm_output(int count, double norm, ofstream& fout) {
+    fout << count << "    " << norm << "    " << endl;
 }
 
 
@@ -503,6 +528,8 @@ void Ensemble::iteration() {
     cout << endl;   // output a new line for the progess log
     recenter();
     coordinates_output(coordinates_out);
+
+    conjugated_gradient_minimization();
 }
 
 

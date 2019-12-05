@@ -1,7 +1,7 @@
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 import numpy as np
-import sys, time
+import sys, time, math
 
 
 def energy_plot(path, input_filename):
@@ -156,26 +156,37 @@ def velocity_autocorr_plot(path, input_filename):
     plt.clf()
 
 
-def ThreeDPlot(path, input_filename):
+def potentialGradientNormPlot(path, input_filename):
     data = np.loadtxt(path + input_filename)
 
-    xs = data[:, 0]
-    ys = data[:, 1]
-    zs = data[:, 2]
+    iteration = data[:, 0]
+    potentialGradientNorm = [math.sqrt(i) for i in data[:, 1]]
 
     fig = plt.figure(1, dpi=500, figsize=(7.4, 4.8), facecolor="white")
-    ax = fig.add_subplot(111, projection="3d")
+    ax = fig.add_subplot(111)
 
-    for i in range(len(xs)):
-        ax.scatter(xs[i], ys[i], zs[i], color="green")
+    ax.plot(iteration, potentialGradientNorm, color="orange", label="Potential Gradient Norm")
+    
+    ax.set_xlabel("iteration")
+    ax.set_ylabel("Potential Gradient Norm")
 
-    ax.set_xlabel("X")
-    ax.set_ylabel("Y")
-    ax.set_zlabel("Z")
-
-    # plt.legend()
+    plt.legend()
     plt.savefig(path + input_filename[:-4] + ".png")
     plt.clf()
+
+    # fig = plt.figure(1, dpi=500, figsize=(7.4, 4.8), facecolor="white")
+    # ax = fig.add_subplot(111, projection="3d")
+
+    # for i in range(len(xs)):
+    #     ax.scatter(xs[i], ys[i], zs[i], color="green")
+
+    # ax.set_xlabel("X")
+    # ax.set_ylabel("Y")
+    # ax.set_zlabel("Z")
+
+    # # plt.legend()
+    # plt.savefig(path + input_filename[:-4] + ".png")
+    # plt.clf()
 
 
 def mk_plot(path, filename, plot_function):
@@ -189,6 +200,7 @@ if __name__ == "__main__":
     mk_plot(path, "energy.csv", energy_plot)
     mk_plot(path, "temperature.csv", temperature_plot)
     mk_plot(path, "particle.csv", particle_plot)
+    mk_plot(path, "potential_gradient_norm.csv", potentialGradientNormPlot)
     # mk_plot(path, "coordinates.csv", ThreeDPlot)
     # mk_plot(path, "msd.csv", msd_plot)
     # mk_plot(path, "rdf.csv", rdf_plot)
