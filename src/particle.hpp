@@ -4,8 +4,8 @@
 class Particle {
 
 friend class Ensemble;
-friend double distance(Particle&, Particle&, double);
-friend double distance2(Particle&, Particle&, double);
+friend double distance(Particle&, Particle&);
+friend double distance2(Particle&, Particle&);
 friend double calc_velocity(Particle&);
 
 public:

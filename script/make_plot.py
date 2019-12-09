@@ -187,6 +187,25 @@ def potentialGradientNormPlot(path, input_filename):
     # # plt.legend()
     # plt.savefig(path + input_filename[:-4] + ".png")
     # plt.clf()
+def interParticlePlot(path, input_filename):
+    data = np.loadtxt(path + input_filename)
+
+    time = data[:, 0]
+    interParticle = data[:, 1]
+
+    fig = plt.figure(1, dpi=500, figsize=(7.4, 4.8), facecolor="white")
+    ax = fig.add_subplot(111)
+
+    ax.plot(time, interParticle, color="orange", label="inter-particle distance")
+    
+    ax.set_xlabel("time")
+    ax.set_ylabel("inter-particle distance")
+
+    plt.legend()
+    plt.savefig(path + input_filename[:-4] + ".png")
+    plt.clf()
+
+
 
 
 def mk_plot(path, filename, plot_function):
@@ -201,6 +220,7 @@ if __name__ == "__main__":
     mk_plot(path, "temperature.csv", temperature_plot)
     mk_plot(path, "particle.csv", particle_plot)
     mk_plot(path, "potential_gradient_norm.csv", potentialGradientNormPlot)
+    mk_plot(path, "inter_distance.csv", interParticlePlot)
     # mk_plot(path, "coordinates.csv", ThreeDPlot)
     # mk_plot(path, "msd.csv", msd_plot)
     # mk_plot(path, "rdf.csv", rdf_plot)
