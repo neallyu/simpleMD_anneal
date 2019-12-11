@@ -1,6 +1,6 @@
 Particle_number          55
 Box_size                 10
-Init_Temperatrue         100
+Init_Temperatrue         150
 Temperature              0
 Time_interval            0.00001
 Equilibration_time       1000

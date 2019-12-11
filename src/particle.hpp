@@ -4,6 +4,7 @@
 class Particle {
 
 friend class Ensemble;
+friend class CG;
 friend double distance(Particle&, Particle&);
 friend double distance2(Particle&, Particle&);
 friend double calc_velocity(Particle&);

@@ -15,6 +15,8 @@ using namespace std;
 
 class Ensemble {
 
+friend class CG;
+
 public:
     // reduced unit
     Ensemble(const unsigned _particle_number, double _box, double init_temp, double set_temp, double time_interval, 
