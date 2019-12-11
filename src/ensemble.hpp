@@ -9,7 +9,6 @@
 #include <random>
 #include <omp.h>
 #include "particle.hpp"
-#include "particle_CG.hpp"
 #include "utils.hpp"
 
 using namespace std;
@@ -44,16 +43,6 @@ public:
 
     inline void recenter();
 
-    inline void calc_potential_gradient();
-
-    inline void calc_potential_gradient(vector<Particle_CG>&);
-
-    inline vector<double> calc_potential_gradient_norm_2();
-
-    inline vector<double> calc_gamma_i();
-
-    inline void conjugated_gradient_minimization();
-
     // main iteration
     inline void iteration();
 
@@ -61,7 +50,7 @@ public:
     inline void particle_movement_output(unsigned long i, Particle& particle, ofstream& fout);
     inline void temperature_output(unsigned long i, ofstream& fout);
     inline void coordinates_output(ofstream& fout);
-    inline void potential_gradient_norm_output(int count, double norm, ofstream& fout);
+
     inline void inter_distance_output(unsigned long i, ofstream& fout);
 
 private:
@@ -86,8 +75,7 @@ private:
     ofstream particle_out;                          // output file stream of trajectory of selected particle
     ofstream temperature_out;                       // output file stream of temperature
     ofstream coordinates_out;                       // output file stream of coordinates of particles
-    ofstream coordinates_out_CG;                    // output file stream of coordinates after CG optimization
-    ofstream potential_gradient_norm_out;           // output file stream of potential gradient norm
+
     ofstream inter_distance_out;                    // output file stream of inter particle distance summary
 };
 
@@ -111,8 +99,6 @@ Ensemble::Ensemble(const unsigned _particle_number, double _box, double init_tem
     particle_out(_output_path + "/particle.csv"),
     temperature_out(_output_path + "/temperature.csv"),
     coordinates_out(_output_path + "/coordinates.cif"),
-    coordinates_out_CG(_output_path + "/coordinates_after_CG.cif"),
-    potential_gradient_norm_out(_output_path + "/potential_gradient_norm.csv"),
     inter_distance_out(_output_path + "/inter_distance.csv")
     {
         cout << "[MD LOG] " << get_current_time() << "\tEquilibration iteration: " << EQUILIBRATION_ITERATION << endl;
@@ -165,8 +151,6 @@ Ensemble::~Ensemble() {
     particle_out.close();
     temperature_out.close();
     coordinates_out.close();
-    coordinates_out_CG.close();
-    potential_gradient_norm_out.close();
     inter_distance_out.close();
     cout << "[MD LOG] " << get_current_time() << "\tOutput file saved" << endl;
 }
@@ -320,160 +304,6 @@ void Ensemble::Andersen_thermostat(double target_TEMP, double collision_frequenc
     }
 }
 
-
-
-void Ensemble::calc_potential_gradient() {
-    #pragma omp parallel for
-    for (int i = 0; i < particle_number - 1; ++i) {
-        for (auto j = i + 1; j < particle_number; ++j) {
-            calc_acceleration(ensemble[i], ensemble[j]);
-        }
-    }
-}
-
-
-void Ensemble::calc_potential_gradient(vector<Particle_CG>& ensemble_CG) {
-    #pragma omp parallel for
-    for (int i = 0; i < particle_number - 1; ++i) {
-        for (int j = i + 1; j < particle_number; ++j) {
-            double dx = ensemble_CG[i].pos_x_B - ensemble_CG[j].pos_x_B;
-            double dy = ensemble_CG[i].pos_y_B - ensemble_CG[j].pos_y_B;
-            double dz = ensemble_CG[i].pos_z_B - ensemble_CG[j].pos_z_B;
-
-            double r2 = dx * dx + dy * dy + dz * dz;
-            double r2i = 1 / r2;
-            double r6i = pow(r2i, 3);
-            double g_x = -48.0 * r6i * r2i * (r6i - 0.5) * dx;
-            double g_y = -48.0 * r6i * r2i * (r6i - 0.5) * dy;
-            double g_z = -48.0 * r6i * r2i * (r6i - 0.5) * dz;
-            ensemble_CG[i].g_x_B += g_x;
-            ensemble_CG[i].g_y_B += g_y;
-            ensemble_CG[i].g_z_B += g_z;
-            ensemble_CG[j].g_x_B -= g_x;
-            ensemble_CG[j].g_y_B -= g_y;
-            ensemble_CG[j].g_z_B -= g_z;
-        }
-    }
-}
-
-
-vector<double> Ensemble::calc_potential_gradient_norm_2() {
-    vector<double> norm_2(2, 0);
-    #pragma omp parallel for
-    for (int i = 0; i < particle_number; ++i) {
-        norm_2[0] += pow(ensemble[i].a_x_A, 2) + pow(ensemble[i].a_y_A, 2) + pow(ensemble[i].a_z_A, 2);
-        norm_2[1] += pow(ensemble[i].a_x_B, 2) + pow(ensemble[i].a_y_B, 2) + pow(ensemble[i].a_z_B, 2);
-    }
-    return norm_2;
-}
-
-
-vector<double> Ensemble::calc_gamma_i() {
-    vector<double> gamma_i(2, 0);
-    #pragma omp parallel for
-    for (int i = 0; i < particle_number; ++i) {
-        gamma_i[0] += pow(ensemble[i].a_x_A, 2) + pow(ensemble[i].a_y_A, 2) + pow(ensemble[i].a_z_A, 2);
-        gamma_i[1] += (ensemble[i].a_x_B - ensemble[i].a_x_A) * ensemble[i].a_x_B +
-            (ensemble[i].a_y_B - ensemble[i].a_y_A) * ensemble[i].a_y_B +
-            (ensemble[i].a_z_B - ensemble[i].a_z_A) * ensemble[i].a_z_B;
-    }
-    return gamma_i;
-}
-
-
-void Ensemble::conjugated_gradient_minimization() {
-    cout << "[MD LOG] " << get_current_time() << "\tConjugated gradient optimization started..." << endl;
-
-    // declare ensemble for conjugated gradient optimization
-    // vector<Particle_CG> ensemble_CG;
-    double step_size(1e-60), precision_2(1e-2);
-
-    // initialize ensemble_CG
-    // for (int i = 0; i < particle_number; ++i) {
-    //     Particle_CG particle_cg;
-    //     particle_cg.pos_x_B = ensemble[i].pos_x;
-    //     particle_cg.pos_y_B = ensemble[i].pos_y;
-    //     particle_cg.pos_z_B = ensemble[i].pos_z;
-    //     particle_cg.g_x_B = -ensemble[i].a_x_A;
-    //     particle_cg.g_y_B = -ensemble[i].a_y_A;
-    //     particle_cg.g_z_B = -ensemble[i].a_z_A;
-    //     particle_cg.d_x_B = ensemble[i].a_x_A;
-    //     particle_cg.d_y_B = ensemble[i].a_y_A;
-    //     particle_cg.d_z_B = ensemble[i].a_z_A;
-    //     ensemble_CG.push_back(particle_cg);
-    // }
-
-    // initialize d_i
-    #pragma omp parallel for
-    for (int i = 0; i < particle_number - 1; ++i) {
-        for (auto j = i + 1; j < particle_number; ++j) {
-            calc_acceleration(ensemble[i], ensemble[j]);
-        }
-    }
-    #pragma omp parallel for
-    for (int i = 0; i < particle_number; ++i) {
-        ensemble[i].d_x_A = ensemble[i].a_x_B;
-        ensemble[i].d_y_A = ensemble[i].a_y_B;
-        ensemble[i].d_z_A = ensemble[i].a_z_B;
-    }
-
-    vector<double> g = calc_potential_gradient_norm_2();
-    cout << "gradient_norm_2: " << g[0] << endl;
-    int count(0);
-
-    // minimal condition is the norm of gradient of fx closes to zero
-    while (g[0] > precision_2) {
-
-        potential_gradient_norm_output(count, g[0], potential_gradient_norm_out);
-
-        #pragma omp parallel for
-        for (int i = 0; i < particle_number; ++i) {
-            // x propagation: x_(i+1) = x_i + step_size * d_i
-            ensemble[i].pos_x += step_size * ensemble[i].d_x_A;
-            ensemble[i].pos_y += step_size * ensemble[i].d_y_A;
-            ensemble[i].pos_z += step_size * ensemble[i].d_z_A;
-
-            // record a_A and initialize a_B
-            ensemble[i].a_x_A = ensemble[i].a_x_B;
-            ensemble[i].a_y_A = ensemble[i].a_y_B;
-            ensemble[i].a_z_A = ensemble[i].a_z_B;
-            ensemble[i].a_x_B = 0;
-            ensemble[i].a_y_B = 0;
-            ensemble[i].a_z_B = 0;
-        }
-
-        // calculate g_(i+1) 
-        #pragma omp parallel for
-        for (int i = 0; i < particle_number - 1; ++i) {
-            for (auto j = i + 1; j < particle_number; ++j) {
-                calc_acceleration(ensemble[i], ensemble[j]);
-            }
-        }
-
-        // g = calc_potential_gradient_norm_2();
-        // double beta_i = g[1] / g[0];
-
-        g = calc_gamma_i();
-        double beta_i = g[1] / g[0];
-        
-        // d propagation: d_(i+1) = a_(i+1) + norm_2(a_(i+1)) / norm_2(a_i) * d_i
-        #pragma omp parallel for
-        for (int i = 0; i < particle_number; ++i) {
-            ensemble[i].d_x_A = ensemble[i].d_x_B;
-            ensemble[i].d_y_A = ensemble[i].d_y_B;
-            ensemble[i].d_z_A = ensemble[i].d_z_B;
-            ensemble[i].d_x_B = ensemble[i].a_x_B + beta_i * ensemble[i].d_x_A;
-            ensemble[i].d_y_B = ensemble[i].a_y_B + beta_i * ensemble[i].d_y_A;
-            ensemble[i].d_z_B = ensemble[i].a_z_B + beta_i * ensemble[i].d_z_A;
-        }
-        count++;
-    }
-
-    coordinates_output(coordinates_out_CG);
-    cout << "[MD LOG] " << get_current_time() << "\tConjugated gradient optimization finished." << endl;
-}
-
-
 double Ensemble::temperature_decreasing_curve(unsigned long i) {
     return pow(EQUILIBRATION_ITERATION - i, 2) * INIT_TEMP / EQUILIBRATION_ITERATION_2;
 }
@@ -510,10 +340,6 @@ void Ensemble::coordinates_output(ofstream& fout) {
     }
 }
 
-
-void Ensemble::potential_gradient_norm_output(int count, double norm, ofstream& fout) {
-    fout << count << "    " << norm << "    " << endl;
-}
 
 
 void Ensemble::inter_distance_output(unsigned long i, ofstream& fout) {
@@ -559,7 +385,7 @@ void Ensemble::iteration() {
             // execute x and v propagation
             ensemble[i].movement();
             ensemble[i].velocity();
-            if (temp > 1e-3) {
+            if (temp > 1e-1) {
                 rebounce(ensemble[i]);
             }
             // record a_A and initialize a_B
@@ -606,8 +432,6 @@ void Ensemble::iteration() {
     cout << endl;   // output a new line for the progess log
     recenter();
     coordinates_output(coordinates_out);
-
-    // conjugated_gradient_minimization();
 }
 
 

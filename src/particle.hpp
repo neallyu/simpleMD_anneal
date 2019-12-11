@@ -45,16 +45,6 @@ protected:
     double a_y_B;
     double a_z_B;
 
-    // direction in CG optimization of step A
-    double d_x_A;
-    double d_y_A;
-    double d_z_A;
-
-    // direction in CG optimization of step B
-    double d_x_B;
-    double d_y_B;
-    double d_z_B;
-
     double potential_value;
     double kinetic_value;
 
@@ -64,13 +54,12 @@ protected:
 
 Particle::Particle(double _time_interval): 
     v_x(0), v_y(0), v_z(0), pos_x(0), pos_y(0), pos_z(0), a_x_B(0), a_y_B(0), a_z_B(0), 
-    d_x_A(0), d_y_A(0), d_z_A(0), d_x_B(0), d_y_B(0), d_z_B(0), time_interval(_time_interval) { }
+    time_interval(_time_interval) { }
 
 // Copy initializer
 Particle::Particle(const Particle& other): v_x(other.v_x), v_y(other.v_y), v_z(other.v_z), 
     pos_x(other.pos_x), pos_y(other.pos_y), pos_z(other.pos_z), a_x_B(other.a_x_B), a_y_B(other.a_y_B), 
-    a_z_B(other.a_z_B), d_x_A(other.d_x_A), d_y_A(other.d_y_A), d_z_A(other.d_z_A), d_x_B(other.d_x_B),
-    d_y_B(other.d_y_B), d_z_B(other.d_z_B), time_interval(other.time_interval) { }
+    a_z_B(other.a_z_B), time_interval(other.time_interval) { }
 
 
 // execute movement
