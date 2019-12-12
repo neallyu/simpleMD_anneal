@@ -10,6 +10,7 @@
 #include <omp.h>
 #include "particle.hpp"
 #include "utils.hpp"
+#include "conjugated_gradient.hpp"
 
 using namespace std;
 
@@ -29,12 +30,15 @@ public:
     inline Particle& operator[] (const int index);
 
     // lattice position
-    inline void lattice_pos();
+    inline void lattice_pos_box();
+    inline void lattice_pos_sphere();
 
     // calculation acceleration between a pair of particles
     inline void calc_acceleration(Particle& particle1, Particle& particle2);
 
-    inline void rebounce(Particle& particle);
+    inline void box_boundary(Particle& particle);
+
+    inline void sphere_boundary(Particle& particle);
 
     inline double temperature_decreasing_curve(unsigned long i);
 
@@ -44,6 +48,7 @@ public:
     inline void Andersen_thermostat(double targetTEMP, double collision_frequency);
 
     inline void recenter();
+    inline void recenter_sphere();
 
     // main iteration
     inline void iteration();
@@ -117,7 +122,8 @@ Ensemble::Ensemble(const unsigned _particle_number, double _box, double init_tem
         // parallel
         omp_set_num_threads(32);
 
-        lattice_pos();
+        // lattice_pos_box();
+        lattice_pos_sphere();
         rescale_temperature(INIT_TEMP);
 
         // Initialize acceleartion in step A
@@ -164,7 +170,7 @@ Particle& Ensemble::operator[] (const int index) {
 }
 
 
-void Ensemble::lattice_pos() {
+void Ensemble::lattice_pos_box() {
 
     default_random_engine random_generator;
     uniform_real_distribution<double> displacement(0, 1.0);  //distribution generator
@@ -202,6 +208,12 @@ void Ensemble::lattice_pos() {
 }
 
 
+void Ensemble::lattice_pos_sphere() {
+    lattice_pos_box();
+    recenter_sphere();
+}
+
+
 void Ensemble::calc_acceleration(Particle& particle1, Particle& particle2) {
     double dx = particle1.pos_x - particle2.pos_x;
     double dy = particle1.pos_y - particle2.pos_y;
@@ -224,7 +236,7 @@ void Ensemble::calc_acceleration(Particle& particle1, Particle& particle2) {
 }
 
 
-void Ensemble::rebounce(Particle &particle) {
+void Ensemble::box_boundary(Particle &particle) {
     if (particle.pos_x < 0 && particle.v_x < 0) {
         particle.v_x *= -1;
     }
@@ -246,6 +258,68 @@ void Ensemble::rebounce(Particle &particle) {
 }
 
 
+void Ensemble::sphere_boundary(Particle& particle) {
+    double r2 = pow(particle.pos_x, 2) + pow(particle.pos_y, 2) + pow(particle.pos_z, 2);
+    double BOX_2 = BOX * BOX;
+    if (r2 >= BOX_2) {
+        vector<double> pos_vec({particle.pos_x, particle.pos_y, particle.pos_z});
+        vector<double> velocity_vec({particle.v_x, particle.v_y, particle.v_z});
+
+        //scale factor to make new y-axis of linear relavant vector to pos vec and velocity vec which is perpendicular to the new x-axis
+        double a = -(pow(pos_vec[0], 2) + pow(pos_vec[1], 2) + pow(pos_vec[2], 2)) / 
+            (pos_vec[0] * velocity_vec[0] + pos_vec[1] * velocity_vec[1] + pos_vec[2] * velocity_vec[2]);
+
+        vector<double> y_vector(pos_vec);
+        y_vector[0] *= a; y_vector[0] += velocity_vec[0];
+        y_vector[1] *= a; y_vector[1] += velocity_vec[1];
+        y_vector[2] *= a; y_vector[2] += velocity_vec[2];
+
+        vector<double> z_vector(3, 0);
+        z_vector[0] = pos_vec[1] * y_vector[2] - pos_vec[2] * y_vector[1];
+        z_vector[1] = pos_vec[2] * y_vector[0] - pos_vec[0] * y_vector[2];
+        z_vector[2] = pos_vec[0] * y_vector[1] - pos_vec[1] * y_vector[0];
+
+        // linear transformation of velocity vector from original cooridinates to new cooridnates
+        vector<double> new_velocity_vec(3, 0);
+        new_velocity_vec[0] = pos_vec[0] * velocity_vec[0] + y_vector[0] * velocity_vec[1] + z_vector[0] * velocity_vec[2];
+        new_velocity_vec[1] = pos_vec[1] * velocity_vec[0] + y_vector[1] * velocity_vec[1] + z_vector[1] * velocity_vec[2];
+        new_velocity_vec[2] = pos_vec[2] * velocity_vec[0] + y_vector[2] * velocity_vec[1] + z_vector[2] * velocity_vec[2];
+
+        // if the x-portion of the vector larger than zero, do mirror operation to the x-portion of transformed velocity vector
+        if (new_velocity_vec[0] > 0) {
+            new_velocity_vec[0] *= -1;
+        }
+
+        // calculate reverse matrix
+        vector<vector<double> > reverse_transform(3, vector<double>(3, 0));
+        reverse_transform[0][0] = y_vector[1] * z_vector[2] - y_vector[2] * z_vector[1];
+        reverse_transform[0][1] = y_vector[2] * z_vector[0] - y_vector[0] * z_vector[2];
+        reverse_transform[0][2] = y_vector[0] * z_vector[1] - y_vector[1] * z_vector[0];
+        reverse_transform[1][0] = pos_vec[2] * z_vector[1] - pos_vec[1] * z_vector[2];
+        reverse_transform[1][1] = pos_vec[0] * z_vector[2] - pos_vec[2] * z_vector[0];
+        reverse_transform[1][2] = pos_vec[1] * z_vector[0] - pos_vec[0] * z_vector[1];
+        reverse_transform[2][0] = pos_vec[1] * y_vector[2] - pos_vec[2] * y_vector[1];
+        reverse_transform[2][1] = pos_vec[2] * y_vector[0] - pos_vec[0] * y_vector[2];
+        reverse_transform[2][2] = pos_vec[0] * y_vector[1] - pos_vec[1] * y_vector[0];
+
+        vector<double> r_velocity_vec(3, 0);
+        // reverse transform to the velocity vector
+        for (int i = 0; i < r_velocity_vec.size(); i++) {
+            r_velocity_vec[i] = new_velocity_vec[0] * reverse_transform[i][0] + new_velocity_vec[1] * reverse_transform[i][1] + 
+                new_velocity_vec[2] * reverse_transform[i][2];
+        }
+        
+        // scale the new velocity vector to the same of original velocity
+        double scale_factor(0);
+        scale_factor = sqrt((pow(velocity_vec[0], 2) + pow(velocity_vec[1], 2) + pow(velocity_vec[2], 2)) / 
+            (pow(r_velocity_vec[0], 2) + pow(r_velocity_vec[1], 2) + pow(r_velocity_vec[2], 2)) );
+        particle.v_x = r_velocity_vec[0] * scale_factor;
+        particle.v_y = r_velocity_vec[1] * scale_factor;
+        particle.v_z = r_velocity_vec[2] * scale_factor;
+    }
+}
+
+
 void Ensemble::recenter() {
     double pos_x_center(0), pos_y_center(0), pos_z_center(0);
     #pragma omp parallel for
@@ -258,11 +332,34 @@ void Ensemble::recenter() {
     pos_y_center /= particle_number;
     pos_z_center /= particle_number;
 
+    // box boundary
     #pragma omp parallel for
     for (int i = 0; i < particle_number; ++i) {
         ensemble[i].pos_x += (BOX / 2 - pos_x_center);
         ensemble[i].pos_y += (BOX / 2 - pos_y_center);
         ensemble[i].pos_z += (BOX / 2 - pos_z_center);
+    }
+}
+
+
+void Ensemble::recenter_sphere() {
+    double pos_x_center(0), pos_y_center(0), pos_z_center(0);
+    #pragma omp parallel for
+    for (int i = 0; i < particle_number; ++i) {
+        pos_x_center += ensemble[i].pos_x;
+        pos_y_center += ensemble[i].pos_y;
+        pos_z_center += ensemble[i].pos_z;
+    }
+    pos_x_center /= particle_number;
+    pos_y_center /= particle_number;
+    pos_z_center /= particle_number;
+
+    // sphere boundary
+    #pragma omp parallel for
+    for (int i = 0; i < particle_number; ++i) {
+        ensemble[i].pos_x -= pos_x_center;
+        ensemble[i].pos_y -= pos_y_center;
+        ensemble[i].pos_z -= pos_z_center;
     }
 }
 
@@ -388,7 +485,8 @@ void Ensemble::iteration() {
             ensemble[i].movement();
             ensemble[i].velocity();
             if (temp > 1e-1) {
-                rebounce(ensemble[i]);
+                // box_boundary(ensemble[i]);
+                sphere_boundary(ensemble[i]);
             }
             // record a_A and initialize a_B
             ensemble[i].a_x_A = ensemble[i].a_x_B;
