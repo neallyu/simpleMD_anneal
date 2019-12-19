@@ -10,13 +10,10 @@
 #include <omp.h>
 #include "particle.hpp"
 #include "utils.hpp"
-#include "conjugated_gradient.hpp"
 
 using namespace std;
 
 class Ensemble {
-
-friend class CG;
 
 public:
     // reduced unit
@@ -56,9 +53,7 @@ public:
     inline void energy_output(unsigned long i, ofstream& fout);
     inline void particle_movement_output(unsigned long i, Particle& particle, ofstream& fout);
     inline void temperature_output(unsigned long i, ofstream& fout);
-    inline void coordinates_output(ofstream& fout);
-
-    inline void inter_distance_output(unsigned long i, ofstream& fout);
+    inline void coordinates_output(ofstream& fout_cif, ofstream& fout2_rawdata);
 
 private:
     // all variable below are in reduced unit
@@ -81,9 +76,8 @@ private:
     ofstream ensemble_out;                          // output file stream of energy
     ofstream particle_out;                          // output file stream of trajectory of selected particle
     ofstream temperature_out;                       // output file stream of temperature
-    ofstream coordinates_out;                       // output file stream of coordinates of particles
-    string outputPath;                              // store the output path
-    ofstream inter_distance_out;                    // output file stream of inter particle distance summary
+    ofstream coordinates_cif_out;                   // output file stream of coordinates of particles
+    ofstream coordinates_rawdata_out;               
 };
 
 // reduced unit
@@ -105,9 +99,8 @@ Ensemble::Ensemble(const unsigned _particle_number, double _box, double init_tem
     ensemble_out(_output_path + "/energy.csv"),
     particle_out(_output_path + "/particle.csv"),
     temperature_out(_output_path + "/temperature.csv"),
-    coordinates_out(_output_path + "/coordinates.cif"),
-    inter_distance_out(_output_path + "/inter_distance.csv"),
-    outputPath(_output_path)
+    coordinates_cif_out(_output_path + "/coordinates.cif"),
+    coordinates_rawdata_out(_output_path + "/coordinates_rawdata.txt")
     {
         cout << "[MD LOG] " << get_current_time() << "\tEquilibration iteration: " << EQUILIBRATION_ITERATION << endl;
         cout << "[MD LOG] " << get_current_time() << "\tIteration: " << ITERATION << endl;
@@ -117,8 +110,6 @@ Ensemble::Ensemble(const unsigned _particle_number, double _box, double init_tem
         cout << "[MD LOG] " << get_current_time() << "\tParticle trajectory data output to \"" + _output_path + "/particle.csv\" ..." << endl;
         cout << "[MD LOG] " << get_current_time() << "\tTemperature data output to \"" + _output_path + "/temperature.csv\" ..." << endl;
         cout << "[MD LOG] " << get_current_time() << "\tCoordinates data output to \"" + _output_path + "/coordinates.cif\" ..." << endl;
-        cout << "[MD LOG] " << get_current_time() << "\tCoordinates data output to \"" + _output_path + "/coordinates_after_CG.cif\" ..." << endl;
-        cout << "[MD LOG] " << get_current_time() << "\tCoordinates data output to \"" + _output_path + "/potential_gradient_norm.csv\" ..." << endl;
 
         // parallel
         omp_set_num_threads(32);
@@ -159,8 +150,8 @@ Ensemble::~Ensemble() {
     ensemble_out.close();
     particle_out.close();
     temperature_out.close();
-    coordinates_out.close();
-    inter_distance_out.close();
+    coordinates_cif_out.close();
+    coordinates_rawdata_out.close();
     cout << "[MD LOG] " << get_current_time() << "\tOutput file saved" << endl;
 }
 
@@ -428,30 +419,20 @@ void Ensemble::temperature_output(unsigned long i, ofstream& fout) {
 }
 
 
-void Ensemble::coordinates_output(ofstream& fout) {
-    fout << "data_structure_1" << endl;
-    fout << "_cell_length_a " << BOX << "\n_cell_length_b " << BOX << "\n_cell_length_c " << BOX << endl;
-    fout << "_cell_angle_alpha 90\n_cell_angle_beta 90\n_cell_angle_gamma 90" << endl;
-    fout << "_cell_volume " << pow(BOX, 3) << endl;
-    fout << endl;
-    fout << "loop_\n_atom_site_label\n_atom_site_fract_x\n_atom_site_fract_y\n_atom_site_fract_z" << endl;
+void Ensemble::coordinates_output(ofstream& fout_cif, ofstream& fout_rawdata) {
+    fout_cif << "data_structure_1" << endl;
+    fout_cif << "_cell_length_a " << BOX << "\n_cell_length_b " << BOX << "\n_cell_length_c " << BOX << endl;
+    fout_cif << "_cell_angle_alpha 90\n_cell_angle_beta 90\n_cell_angle_gamma 90" << endl;
+    fout_cif << "_cell_volume " << pow(BOX, 3) << endl;
+    fout_cif << endl;
+    fout_cif << "loop_\n_atom_site_label\n_atom_site_fract_x\n_atom_site_fract_y\n_atom_site_fract_z" << endl;
     for (auto it = ensemble.begin(); it != ensemble.end(); ++it) {
-        fout << "O " << (it->pos_x / BOX) << " " << (it->pos_y / BOX) << " " << (it->pos_z / BOX) << endl;
-    }
-}
-
-
-
-void Ensemble::inter_distance_output(unsigned long i, ofstream& fout) {
-    double total_distance(0);
-    #pragma omp parallel for
-    for (int i = 0; i < particle_number - 1; ++i) {
-        for (int j = i + 1; j < particle_number; ++j) {
-            total_distance += distance(ensemble[i], ensemble[j]);
-        }
+        fout_cif << "O " << (it->pos_x / BOX) << " " << (it->pos_y / BOX) << " " << (it->pos_z / BOX) << endl;
     }
 
-    fout << i * TIME_INTERVAL << "    " << total_distance << endl;
+    for (auto it = ensemble.begin(); it != ensemble.end(); ++it) {
+        fout_rawdata << it->pos_x << " " << it->pos_y << " " << it->pos_z << endl;
+    }
 }
 
 
@@ -512,7 +493,6 @@ void Ensemble::iteration() {
             particle_movement_output(i, ensemble[1], particle_out);
             energy_output(i, ensemble_out);
             temperature_output(i, temperature_out);
-            inter_distance_output(i, inter_distance_out);
         }
 
         // decrease the temperature following a parabolic curve
@@ -532,11 +512,7 @@ void Ensemble::iteration() {
     }
     cout << endl;   // output a new line for the progess log
     recenter();
-    coordinates_output(coordinates_out);
-    
-    // initialize the conjugated gradient optimization
-    CG conjugated_gradient_optimization(outputPath, ensemble);
-    conjugated_gradient_optimization.conjugated_gradient_minimization(BOX);
+    coordinates_output(coordinates_cif_out, coordinates_rawdata_out);
 }
 
 

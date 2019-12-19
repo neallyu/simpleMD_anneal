@@ -28,4 +28,12 @@ struct CreatingOutputPath: public exception
     }
 };
 
+
+struct WrongInputNumber: public exception
+{
+    const char *what() const throw () {
+        return "wrong input number";
+    }
+};
+
 #endif

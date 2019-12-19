@@ -9,13 +9,14 @@
 #include <omp.h>
 #include "utils.hpp"
 #include "particle.hpp"
+#include "error_handling.hpp"
 
 using namespace std;
 
 class CG {
 
 public:
-    CG(string _output_path, vector<Particle>& ensemble);
+    CG(string _output_path, vector<vector<double> >& ensemble);
     ~CG();
 
     inline vector<vector<double> > calc_potential_gradient(vector<vector<double> >& position);
@@ -46,7 +47,7 @@ private:
 };
 
 
-CG::CG(string _output_path, vector<Particle>& ensemble): 
+CG::CG(string _output_path, vector<vector<double> >& ensemble): 
     position(ensemble.size(), vector<double>(3, 0)),
     c(1e-4),
     coordinates_out_CG(_output_path + "/coordinates_after_CG.cif"),
@@ -56,9 +57,9 @@ CG::CG(string _output_path, vector<Particle>& ensemble):
         omp_set_num_threads(32);
 
         for (int i = 0; i < ensemble.size(); i++) {
-            position[i][0] = ensemble[i].pos_x;
-            position[i][1] = ensemble[i].pos_y;
-            position[i][2] = ensemble[i].pos_z;
+            position[i][0] = ensemble[i][0];
+            position[i][1] = ensemble[i][1];
+            position[i][2] = ensemble[i][2];
         }
 }
 
@@ -284,5 +285,42 @@ void CG::coordinates_output(const double BOX, ofstream& fout) {
     }
 }
 
-
 #endif
+
+
+int main(int argc, char* argv[]) {
+    int BOX = 0;
+    int particleNumber = 0;
+        omp_set_num_threads(32);
+    ifstream input;
+    string output_path;
+    try {
+        input.open(argv[1]);
+        if (!input) {
+            throw ReadingFile_Open();
+        }
+        cout << "[MD LOG] " << get_current_time() << "\tReading the input file \"" << argv[1] << "\"..." << endl;
+        BOX = stoi(argv[2]);
+        particleNumber = stoi(argv[3]);
+        if (BOX <= 0 || particleNumber <= 0) {
+            throw WrongInputNumber();
+        }
+        output_path = argv[4];
+    } catch (ReadingFile_Open e) {
+        cerr << "[MD ERR] " << get_current_time() << "\tError in reading input file: " << e.what() << endl;
+    } catch (WrongInputNumber e) {
+        cerr << "[MD ERR] " << get_current_time() << "\tError in getting BOX size: " << BOX << " or in particle number: " << particleNumber << endl;
+    }
+
+    vector<vector<double> > ensemble(particleNumber, vector<double>(3, 0));
+    for (int i = 0; i < particleNumber; i++) {
+        string coordinateX, coordinateY, coordinateZ;
+        input >> coordinateX >> coordinateY >> coordinateZ;
+        ensemble[i][0] = stod(coordinateX) * BOX;
+        ensemble[i][1] = stod(coordinateY) * BOX;
+        ensemble[i][2] = stod(coordinateZ) * BOX;
+    }
+    
+    CG cg_optimization(output_path, ensemble);
+    cg_optimization.conjugated_gradient_minimization(BOX);
+}
