@@ -160,15 +160,16 @@ def potentialGradientNormPlot(path, input_filename):
     data = np.loadtxt(path + input_filename)
 
     iteration = data[:, 0]
-    potentialGradientNorm = [math.sqrt(i) for i in data[:, 1]]
+    # potentialGradientNorm = [math.sqrt(i) for i in data[:, 1]]
+    potentialGradientNorm = data[:, 1]
 
     fig = plt.figure(1, dpi=500, figsize=(7.4, 4.8), facecolor="white")
     ax = fig.add_subplot(111)
 
-    ax.plot(iteration, potentialGradientNorm, color="orange", label="Potential Gradient Norm")
+    ax.plot(iteration, potentialGradientNorm, color="orange", label="Potential")
     
     ax.set_xlabel("iteration")
-    ax.set_ylabel("Potential Gradient Norm")
+    ax.set_ylabel("Potential")
 
     plt.legend()
     plt.savefig(path + input_filename[:-4] + ".png")
@@ -219,8 +220,8 @@ if __name__ == "__main__":
     mk_plot(path, "energy.csv", energy_plot)
     mk_plot(path, "temperature.csv", temperature_plot)
     mk_plot(path, "particle.csv", particle_plot)
-    mk_plot(path, "potential_gradient_norm.csv", potentialGradientNormPlot)
-    mk_plot(path, "inter_distance.csv", interParticlePlot)
+    mk_plot(path, "potential_value.csv", potentialGradientNormPlot)
+    # mk_plot(path, "inter_distance.csv", interParticlePlot)
     # mk_plot(path, "coordinates.csv", ThreeDPlot)
     # mk_plot(path, "msd.csv", msd_plot)
     # mk_plot(path, "rdf.csv", rdf_plot)

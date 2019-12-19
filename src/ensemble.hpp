@@ -82,7 +82,7 @@ private:
     ofstream particle_out;                          // output file stream of trajectory of selected particle
     ofstream temperature_out;                       // output file stream of temperature
     ofstream coordinates_out;                       // output file stream of coordinates of particles
-
+    string outputPath;                              // store the output path
     ofstream inter_distance_out;                    // output file stream of inter particle distance summary
 };
 
@@ -106,7 +106,8 @@ Ensemble::Ensemble(const unsigned _particle_number, double _box, double init_tem
     particle_out(_output_path + "/particle.csv"),
     temperature_out(_output_path + "/temperature.csv"),
     coordinates_out(_output_path + "/coordinates.cif"),
-    inter_distance_out(_output_path + "/inter_distance.csv")
+    inter_distance_out(_output_path + "/inter_distance.csv"),
+    outputPath(_output_path)
     {
         cout << "[MD LOG] " << get_current_time() << "\tEquilibration iteration: " << EQUILIBRATION_ITERATION << endl;
         cout << "[MD LOG] " << get_current_time() << "\tIteration: " << ITERATION << endl;
@@ -122,8 +123,8 @@ Ensemble::Ensemble(const unsigned _particle_number, double _box, double init_tem
         // parallel
         omp_set_num_threads(32);
 
-        // lattice_pos_box();
-        lattice_pos_sphere();
+        lattice_pos_box();
+        // lattice_pos_sphere();
         rescale_temperature(INIT_TEMP);
 
         // Initialize acceleartion in step A
@@ -484,9 +485,9 @@ void Ensemble::iteration() {
             // execute x and v propagation
             ensemble[i].movement();
             ensemble[i].velocity();
-            if (temp > 1e-1) {
-                // box_boundary(ensemble[i]);
-                sphere_boundary(ensemble[i]);
+            if (temp > 1e-3) {
+                box_boundary(ensemble[i]);
+                // sphere_boundary(ensemble[i]);
             }
             // record a_A and initialize a_B
             ensemble[i].a_x_A = ensemble[i].a_x_B;
@@ -532,6 +533,10 @@ void Ensemble::iteration() {
     cout << endl;   // output a new line for the progess log
     recenter();
     coordinates_output(coordinates_out);
+    
+    // initialize the conjugated gradient optimization
+    CG conjugated_gradient_optimization(outputPath, ensemble);
+    conjugated_gradient_optimization.conjugated_gradient_minimization(BOX);
 }
 
 

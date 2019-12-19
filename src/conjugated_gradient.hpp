@@ -188,7 +188,7 @@ vector<vector<double> > CG::matrix_addition_d(vector<vector<double> >& g_ii, vec
 
 
 vector<vector<double> > CG::line_search(vector<vector<double> >& position, vector<vector<double> >& g_i, vector<vector<double> >& d_i) {
-    double alpha(1e-4);
+    double alpha(1e-8);
     double constant(0);
 
     #pragma omp parallel for
@@ -201,7 +201,7 @@ vector<vector<double> > CG::line_search(vector<vector<double> >& position, vecto
     double potential_value_search = calc_potential_value(position_search);
 
     while (potential_value_search > potential_value + alpha * c * constant) {
-        alpha += 1e-4;
+        alpha += 1e-8;
         position_search = matrix_addition_x(position, d_i, alpha);
         potential_value_search = calc_potential_value(position_search);
     }
@@ -214,7 +214,7 @@ void CG::conjugated_gradient_minimization(const double BOX) {
     cout << "[MD LOG] " << get_current_time() << "\tConjugated gradient optimization started..." << endl;
 
     // final precision
-    double precision_2(1e-2);
+    double precision_2(1e-8);
 
     // initialize position matrix
     vector<vector<double> > position_i(position);
