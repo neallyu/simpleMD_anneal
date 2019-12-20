@@ -1,0 +1,6 @@
+CMAKE_MINIMUM_REQUIRED(VERSION 2.8)
+PROJECT(main)
+AUX_SOURCE_DIRECTORY(./anneal DIR_SRCS)
+ADD_EXECUTABLE(MD_simulation ${DIR_SRCS} "main.cpp")
+ADD_EXECUTABLE(conjugated_gradient_optimization ${DIR_SRCS} "conjugated_gradient_optimization.cpp")
+SET(CMAKE_CXX_FLAGS "-Wall --std=c++11 -fopenmp")

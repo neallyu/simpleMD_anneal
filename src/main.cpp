@@ -2,9 +2,9 @@
 #include <string>
 #include <iostream>
 #include <sys/stat.h>
-#include "error_handling.hpp"
-#include "ensemble.hpp"
-#include "utils.hpp"
+#include "anneal/error_handling.h"
+#include "anneal/ensemble.h"
+#include "anneal/utils.h"
 
 using namespace std;
 

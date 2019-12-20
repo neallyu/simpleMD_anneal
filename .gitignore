@@ -7,3 +7,4 @@ test
 output*
 script/venv/*
 script/.idea/*
+build

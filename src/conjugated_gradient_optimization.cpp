@@ -7,9 +7,9 @@
 #include <fstream>
 #include <string>
 #include <omp.h>
-#include "utils.hpp"
-#include "particle.hpp"
-#include "error_handling.hpp"
+#include "anneal/utils.h"
+#include "anneal/particle.h"
+#include "anneal/error_handling.h"
 
 using namespace std;
 
@@ -49,7 +49,7 @@ private:
 
 CG::CG(string _output_path, vector<vector<double> >& ensemble): 
     position(ensemble.size(), vector<double>(3, 0)),
-    c(1e-4),
+    c(1e-20),
     coordinates_out_CG(_output_path + "/coordinates_after_CG.cif"),
     potential_value_out(_output_path + "/potential_value.csv")
     {
@@ -188,8 +188,10 @@ vector<vector<double> > CG::matrix_addition_d(vector<vector<double> >& g_ii, vec
 }
 
 
+
 vector<vector<double> > CG::line_search(vector<vector<double> >& position, vector<vector<double> >& g_i, vector<vector<double> >& d_i) {
-    double alpha(1e-8);
+    double alpha_step_size(1e-20);
+    double alpha(alpha_step_size);
     double constant(0);
 
     #pragma omp parallel for
@@ -200,12 +202,16 @@ vector<vector<double> > CG::line_search(vector<vector<double> >& position, vecto
     vector<vector<double> > position_search = matrix_addition_x(position, d_i, alpha);
     double potential_value = calc_potential_value(position);
     double potential_value_search = calc_potential_value(position_search);
+    // int count(0);
+    // cout << "line search: ";
 
     while (potential_value_search > potential_value + alpha * c * constant) {
-        alpha += 1e-8;
+        // cout << count++ << " ";
+        alpha += alpha_step_size;
         position_search = matrix_addition_x(position, d_i, alpha);
         potential_value_search = calc_potential_value(position_search);
     }
+    // cout << endl;
 
     return position_search;
 }
@@ -215,7 +221,7 @@ void CG::conjugated_gradient_minimization(const double BOX) {
     cout << "[MD LOG] " << get_current_time() << "\tConjugated gradient optimization started..." << endl;
 
     // final precision
-    double precision_2(1e-8);
+    double precision_2(1);
 
     // initialize position matrix
     vector<vector<double> > position_i(position);
@@ -239,17 +245,24 @@ void CG::conjugated_gradient_minimization(const double BOX) {
 
     //initalize potential value
     double potential_value = calc_potential_value(position_ii);
+    double potential_norm_2 = calc_potential_gradient_norm_2(position_ii);
+    cout << "potential value: " << potential_value << endl;
+    cout << "potential gradient norm 2" << potential_norm_2 << endl;
+    cout << "precision2: " << precision_2 << endl;
 
     // minimal condition is the norm of gradient of fx closes to zero
-    while (potential_value > precision_2) {
+    while (potential_norm_2 > precision_2) {
         potential_value_output(potential_value, potential_value_out);
-
+        cout << "potential gradient norm 2" << potential_norm_2 << endl;
+        // cout << "potential value: " << potential_value << endl;
+        
         // calculate x_ii = x_i + alpha * d_i
         position_ii = line_search(position_i, g_i, d_i);
 
         // calculate d_ii = -g_ii + beta * d_i
         g_ii = calc_potential_gradient(position_ii);
-        double beta = calc_potential_gradient_norm_2(g_ii) / calc_potential_gradient_norm_2(g_i);
+        potential_norm_2 = calc_potential_gradient_norm_2(position_ii);
+        double beta = potential_norm_2 / calc_potential_gradient_norm_2(g_i);
         d_ii = matrix_addition_d(g_ii, d_i, beta);
 
         // update potential value
@@ -316,9 +329,9 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < particleNumber; i++) {
         string coordinateX, coordinateY, coordinateZ;
         input >> coordinateX >> coordinateY >> coordinateZ;
-        ensemble[i][0] = stod(coordinateX) * BOX;
-        ensemble[i][1] = stod(coordinateY) * BOX;
-        ensemble[i][2] = stod(coordinateZ) * BOX;
+        ensemble[i][0] = stod(coordinateX);
+        ensemble[i][1] = stod(coordinateY);
+        ensemble[i][2] = stod(coordinateZ);
     }
     
     CG cg_optimization(output_path, ensemble);
