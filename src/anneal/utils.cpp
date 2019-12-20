@@ -1,11 +1,3 @@
-// #ifndef UTILS_H
-// #define UTILS_H
-
-// #include "particle.hpp"
-// #include <cmath>
-// #include <ctime>
-// #include <string>
-
 #include "utils.h"
 
 double distance(Particle &particle1, Particle &particle2) {
@@ -64,5 +56,3 @@ std::string get_current_time() {
 
     return current_time;
 }
-
-// #endif
