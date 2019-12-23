@@ -10,8 +10,10 @@
 #include "anneal/utils.h"
 #include "anneal/particle.h"
 #include "anneal/error_handling.h"
+#include "Eigen/Dense"
 
 using namespace std;
+using namespace Eigen;
 
 class CG {
 
