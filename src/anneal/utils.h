@@ -6,12 +6,16 @@
 #include <ctime>
 #include <string>
 
+// return distance norm value between 2 particles
 double distance(Particle &particle1, Particle &particle2);
 
+// return distance norm squared value between 2 particles
 double distance2(Particle &particle1, Particle &particle2);
 
+// return velocity norm value of the particle
 double calc_velocity(Particle& particle);
 
+// return the string of current time
 std::string get_current_time();
 
 
