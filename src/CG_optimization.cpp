@@ -64,6 +64,7 @@ CG::~CG() {
 
 MatrixXd CG::calc_gradient(MatrixXd& position) {
     MatrixXd gradient(position.rows(), 3);
+    gradient.fill(0);
     // #pragma omp parallel for
     for (int i = 0; i < position.rows() - 1; ++i) {
         for (int j = i + 1; j < position.rows(); ++j) {
@@ -115,8 +116,8 @@ MatrixXd CG::update_direction(MatrixXd& d_i, MatrixXd& g_ii, MatrixXd& g_i) {
 
 MatrixXd CG::line_search(MatrixXd& position, MatrixXd& g_i, MatrixXd& d_i) {
     // calculate the constant in the line search of this time
-    double alpha_step_size(1e-16);
-    double alpha(1e-10);
+    double alpha_step_size(1e-7);
+    double alpha(1e-3);
     double potential = calc_potential(position);
     // the sum of diagonal elements, which is x1 * d_x1 + y1 * d_y1 + z1 * d_z1 + ...
     double constant = (g_i.transpose() * d_i).trace();
@@ -134,12 +135,10 @@ MatrixXd CG::line_search(MatrixXd& position, MatrixXd& g_i, MatrixXd& d_i) {
             position_search = position + alpha * d_i;
             break;
         }
-        cout << "line searching: " << alpha << "\r" << flush;
         position_search = position + alpha * d_i;
         position_search_potential = calc_potential(position_search);
         position_search_variable_abs = fabs((calc_gradient(position_search).transpose() * d_i).trace());
     }
-    cout << endl;
     return position_search;
 }
 
@@ -164,11 +163,12 @@ void CG::conjugated_gradient_minimization(const double BOX) {
 
     // minimal condition is the norm of gradient of fx closes to zero
     while (gradient_squaredNorm > precision_2) {
-        cout << "before position_ii:\n" << position_ii << endl;
         position_ii = line_search(position_i, g_i, d_i);
-        cout << "after position_ii:\n" << position_ii << endl;
+        position_i = position_ii;
         g_ii = calc_gradient(position_ii);
         d_ii = update_direction(d_i, g_ii, g_i);
+        d_i = d_ii;
+        g_i = g_ii;
         gradient_squaredNorm = g_ii.squaredNorm();
         potential_value = calc_potential(position_ii);
         trend_output(potential_value, gradient_squaredNorm, trend_out);
