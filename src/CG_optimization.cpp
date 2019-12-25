@@ -6,7 +6,7 @@
 #include <cmath>
 #include <fstream>
 #include <string>
-#include <omp.h>
+// #include <omp.h>
 #include "anneal/utils.h"
 #include "anneal/particle.h"
 #include "anneal/error_handling.h"
@@ -21,9 +21,9 @@ public:
     CG(string _output_path, MatrixXd& ensemble);
     ~CG();
 
-    inline MatrixXd calc_potential_gradient(MatrixXd& position);
+    inline MatrixXd calc_gradient(MatrixXd& position);
 
-    inline double calc_potential_value(MatrixXd& position);
+    inline double calc_potential(MatrixXd& position);
 
     // calculate d_ii = -g_ii + beta * d_i
     inline MatrixXd update_direction(MatrixXd& d_i, MatrixXd& g_ii, MatrixXd& g_i);
@@ -50,7 +50,7 @@ private:
 CG::CG(string _output_path, MatrixXd& ensemble): 
     position(ensemble),
     c1(1e-4),
-    c2(2e-4),
+    c2(0.8),
     coordinates_out_CG(_output_path + "/coordinates_after_CG.cif"),
     trend_out(_output_path + "/trend.csv")
     { }
@@ -62,9 +62,9 @@ CG::~CG() {
 }
 
 
-MatrixXd CG::calc_potential_gradient(MatrixXd& position) {
+MatrixXd CG::calc_gradient(MatrixXd& position) {
     MatrixXd gradient(position.rows(), 3);
-    #pragma omp parallel for
+    // #pragma omp parallel for
     for (int i = 0; i < position.rows() - 1; ++i) {
         for (int j = i + 1; j < position.rows(); ++j) {
             double dx = position(i, 0) - position(j, 0);
@@ -88,9 +88,9 @@ MatrixXd CG::calc_potential_gradient(MatrixXd& position) {
 }
 
 
-double CG::calc_potential_value(MatrixXd &position) {
+double CG::calc_potential(MatrixXd &position) {
     double potential_value(0);
-    #pragma omp parallel for
+    // #pragma omp parallel for
     for (int i = 0; i < position.rows() - 1; ++i) {
         for (int j = i + 1; j < position.rows(); ++j) {
             double dx = position(i, 0) - position(j, 0);
@@ -115,29 +115,29 @@ MatrixXd CG::update_direction(MatrixXd& d_i, MatrixXd& g_ii, MatrixXd& g_i) {
 
 MatrixXd CG::line_search(MatrixXd& position, MatrixXd& g_i, MatrixXd& d_i) {
     // calculate the constant in the line search of this time
-    double alpha_step_size(1e-6);
-    double alpha(1);
-    double potential_value = calc_potential_value(position);
+    double alpha_step_size(1e-16);
+    double alpha(1e-10);
+    double potential = calc_potential(position);
     // the sum of diagonal elements, which is x1 * d_x1 + y1 * d_y1 + z1 * d_z1 + ...
     double constant = (g_i.transpose() * d_i).trace();
     double constant_abs = fabs(constant);
 
     // the mutable part in the line search of this time
     MatrixXd position_search = position + alpha * d_i;
-    double potential_search_value = calc_potential_value(position_search);
-    double position_search_abs = fabs((calc_potential_gradient(position_search).transpose() * d_i).trace());
+    double position_search_potential = calc_potential(position_search);
+    double position_search_variable_abs = fabs((calc_gradient(position_search).transpose() * d_i).trace());
 
-    while (potential_search_value > potential_value + alpha * c1 * constant || position_search_abs > c2 * constant_abs) {
-        cout << "line searching: " << alpha << "\r" << flush;
+    while (position_search_potential > potential + alpha * c1 * constant || position_search_variable_abs > c2 * constant_abs) {
         alpha -= alpha_step_size;
         if (alpha <= 0) {
             alpha = alpha_step_size;
             position_search = position + alpha * d_i;
             break;
         }
+        cout << "line searching: " << alpha << "\r" << flush;
         position_search = position + alpha * d_i;
-        potential_search_value = calc_potential_value(position_search);
-        position_search_abs = fabs((calc_potential_gradient(position_search).transpose() * d_i).trace());
+        position_search_potential = calc_potential(position_search);
+        position_search_variable_abs = fabs((calc_gradient(position_search).transpose() * d_i).trace());
     }
     cout << endl;
     return position_search;
@@ -149,12 +149,12 @@ void CG::conjugated_gradient_minimization(const double BOX) {
     // initialize
     double precision_2(1e-3);
     MatrixXd position_i(position);
-    MatrixXd g_i = calc_potential_gradient(position);
+    MatrixXd g_i = calc_gradient(position);
     MatrixXd d_i = -1 * g_i;
     MatrixXd position_ii(position_i);
     MatrixXd d_ii(d_i);
     MatrixXd g_ii(g_i);
-    double potential_value = calc_potential_value(position_ii);
+    double potential_value = calc_potential(position_ii);
     double gradient_squaredNorm = g_ii.squaredNorm();
 
     cout << "potential value: " << potential_value << endl;
@@ -164,11 +164,13 @@ void CG::conjugated_gradient_minimization(const double BOX) {
 
     // minimal condition is the norm of gradient of fx closes to zero
     while (gradient_squaredNorm > precision_2) {
+        cout << "before position_ii:\n" << position_ii << endl;
         position_ii = line_search(position_i, g_i, d_i);
-        g_ii = calc_potential_gradient(position_ii);
+        cout << "after position_ii:\n" << position_ii << endl;
+        g_ii = calc_gradient(position_ii);
         d_ii = update_direction(d_i, g_ii, g_i);
         gradient_squaredNorm = g_ii.squaredNorm();
-        potential_value = calc_potential_value(position_ii);
+        potential_value = calc_potential(position_ii);
         trend_output(potential_value, gradient_squaredNorm, trend_out);
     }
 
@@ -202,7 +204,7 @@ void CG::coordinates_output(const double BOX, ofstream& fout) {
 int main(int argc, char* argv[]) {
     int BOX = 0;
     int particleNumber = 0;
-    omp_set_num_threads(32);
+    // omp_set_num_threads(32);
     ifstream input;
     string output_path;
     try {
@@ -235,233 +237,3 @@ int main(int argc, char* argv[]) {
     CG cg_optimization(output_path, ensemble);
     cg_optimization.conjugated_gradient_minimization(BOX);
 }
-
-
-// CG::CG(string _output_path, vector<vector<double> >& ensemble): 
-//     position(ensemble.size(), vector<double>(3, 0)),
-//     c(1e-20),
-//     coordinates_out_CG(_output_path + "/coordinates_after_CG.cif"),
-//     potential_value_out(_output_path + "/potential_value.csv")
-//     {
-//         // parallel
-//         omp_set_num_threads(32);
-
-//         for (int i = 0; i < ensemble.size(); i++) {
-//             position[i][0] = ensemble[i][0];
-//             position[i][1] = ensemble[i][1];
-//             position[i][2] = ensemble[i][2];
-//         }
-// }
-
-
-// vector<vector<double> > CG::calc_potential_gradient(vector<vector<double> >& position) {
-
-//     vector<vector<double> > gradient(position.size(), vector<double>(3));
-
-//     #pragma omp parallel for
-//     for (int i = 0; i < position.size() - 1; ++i) {
-//         for (int j = i + 1; j < position.size(); ++j) {
-//             double dx = position[i][0] - position[j][0];
-//             double dy = position[i][1] - position[j][1];
-//             double dz = position[i][2] - position[j][2];
-
-//             double r2 = dx * dx + dy * dy + dz * dz;
-//             double r2i = 1 / r2;
-//             double r6i = pow(r2i, 3);
-//             double g_x = -48.0 * r6i * r2i * (r6i - 0.5) * dx;
-//             double g_y = -48.0 * r6i * r2i * (r6i - 0.5) * dy;
-//             double g_z = -48.0 * r6i * r2i * (r6i - 0.5) * dz;
-//             gradient[i][0] += g_x;
-//             gradient[i][1] += g_y;
-//             gradient[i][2] += g_z;
-//             gradient[j][0] -= g_x;
-//             gradient[j][1] -= g_y;
-//             gradient[j][2] -= g_z;
-//         }
-//     }
-
-//     return gradient;
-// }
-
-
-// double CG::calc_potential_value(vector<vector<double> > &position) {
-//     double potential_value(0);
-
-//     #pragma omp parallel for
-//     for (int i = 0; i < position.size() - 1; ++i) {
-//         for (int j = i + 1; j < position.size(); ++j) {
-//             double dx = position[i][0] - position[j][0];
-//             double dy = position[i][1] - position[j][1];
-//             double dz = position[i][2] - position[j][2];
-
-//             double r2 = dx * dx + dy * dy + dz * dz;
-//             double r2i = 1 / r2;
-//             double r6i = pow(r2i, 3);
-//             potential_value += 4.0 * r6i * (r6i - 1);
-//         }
-//     }
-
-//     return potential_value;
-// }
-
-
-
-// double CG::calc_potential_gradient_norm_2(vector<vector<double> >& gradient) {
-//     double norm_2(0);
-
-//     #pragma omp parallel for
-//     for (int i = 0; i < gradient.size(); ++i) {
-//         norm_2 += pow(gradient[i][0], 2) + pow(gradient[i][1], 2) + pow(gradient[i][2], 2);
-//     }
-//     return norm_2;
-// }
-
-
-// // vector<double> Ensemble::calc_gamma_i() {
-// //     vector<double> gamma_i(2, 0);
-// //     #pragma omp parallel for
-// //     for (int i = 0; i < particle_number; ++i) {
-// //         gamma_i[0] += pow(ensemble[i].a_x_A, 2) + pow(ensemble[i].a_y_A, 2) + pow(ensemble[i].a_z_A, 2);
-// //         gamma_i[1] += (ensemble[i].a_x_B - ensemble[i].a_x_A) * ensemble[i].a_x_B +
-// //             (ensemble[i].a_y_B - ensemble[i].a_y_A) * ensemble[i].a_y_B +
-// //             (ensemble[i].a_z_B - ensemble[i].a_z_A) * ensemble[i].a_z_B;
-// //     }
-// //     return gamma_i;
-// // }
-
-
-// void CG::calc_direction(vector<vector<double> >& d_i,
-//     vector<vector<double> >& gradient_ii, vector<vector<double> >& gradient_i) {
-    
-//     double beta = calc_potential_gradient_norm_2(gradient_ii) / calc_potential_gradient_norm_2(gradient_i);
-
-//     #pragma omp parallel for
-//     for (int i = 0; i < d_i.size(); i++) {
-//         d_i[i][0] *= beta;
-//         d_i[i][0] -= gradient_ii[i][0];
-//         d_i[i][1] *= beta;
-//         d_i[i][1] -= gradient_ii[i][1];
-//         d_i[i][2] *= beta;
-//         d_i[i][2] -= gradient_ii[i][2];
-//     }
-// }
-
-
-// vector<vector<double> > CG::matrix_addition_x(vector<vector<double> >& position, vector<vector<double> >& d_i, double& alpha) {
-//     vector<vector<double> > result(position.size(), vector<double>(3, 0));
-//     #pragma omp parallel for
-//     for (int i = 0; i < position.size(); i++) {
-//         result[i][0] = position[i][0] + alpha * d_i[i][0];
-//         result[i][1] = position[i][1] + alpha * d_i[i][1];
-//         result[i][2] = position[i][2] + alpha * d_i[i][2];
-//     }
-
-//     return result;
-// }
-
-
-// vector<vector<double> > CG::matrix_addition_d(vector<vector<double> >& g_ii, vector<vector<double> >& d_i, double& beta) {
-//     vector<vector<double> > result(g_ii.size(), vector<double>(3, 0));
-//     #pragma omp parallel for
-//     for (int i = 0; i < g_ii.size(); i++) {
-//         result[i][0] = -g_ii[i][0] + beta * d_i[i][0];
-//         result[i][1] = -g_ii[i][1] + beta * d_i[i][1];
-//         result[i][2] = -g_ii[i][2] + beta * d_i[i][2];
-//     }
-
-//     return result;
-// }
-
-
-
-// vector<vector<double> > CG::line_search(vector<vector<double> >& position, vector<vector<double> >& g_i, vector<vector<double> >& d_i) {
-//     double alpha_step_size(1e-20);
-//     double alpha(alpha_step_size);
-//     double constant(0);
-
-//     #pragma omp parallel for
-//     for (int i = 0; i < g_i.size(); i++) {
-//         constant += g_i[i][0] * d_i[i][0] + g_i[i][1] * d_i[i][1] + g_i[i][2] * d_i[i][2];
-//     }
-
-//     vector<vector<double> > position_search = matrix_addition_x(position, d_i, alpha);
-//     double potential_value = calc_potential_value(position);
-//     double potential_value_search = calc_potential_value(position_search);
-//     // int count(0);
-//     // cout << "line search: ";
-
-//     while (potential_value_search > potential_value + alpha * c * constant) {
-//         // cout << count++ << " ";
-//         alpha += alpha_step_size;
-//         position_search = matrix_addition_x(position, d_i, alpha);
-//         potential_value_search = calc_potential_value(position_search);
-//     }
-//     // cout << endl;
-
-//     return position_search;
-// }
-
-
-// void CG::conjugated_gradient_minimization(const double BOX) {
-//     cout << "[MD LOG] " << get_current_time() << "\tConjugated gradient optimization started..." << endl;
-
-//     // final precision
-//     double precision_2(1);
-
-//     // initialize position matrix
-//     vector<vector<double> > position_i(position);
-
-//     // initialize g_i
-//     vector<vector<double> > g_i = calc_potential_gradient(position);
-
-//     // initialize d_i
-//     vector<vector<double> > d_i(g_i);
-//     #pragma omp parallel for
-//     for (int i = 0; i < g_i.size(); i++) {
-//         d_i[i][0] *= -1;
-//         d_i[i][1] *= -1;
-//         d_i[i][2] *= -1;
-//     }
-
-//     // intialize position_ii, d_ii and g_ii
-//     vector<vector<double> > position_ii(position_i);
-//     vector<vector<double> > d_ii(d_i);
-//     vector<vector<double> > g_ii(g_i);
-
-//     //initalize potential value
-//     double potential_value = calc_potential_value(position_ii);
-//     double potential_norm_2 = calc_potential_gradient_norm_2(position_ii);
-//     cout << "potential value: " << potential_value << endl;
-//     cout << "potential gradient norm 2" << potential_norm_2 << endl;
-//     cout << "precision2: " << precision_2 << endl;
-
-//     // minimal condition is the norm of gradient of fx closes to zero
-//     while (potential_norm_2 > precision_2) {
-//         potential_value_output(potential_value, potential_value_out);
-//         cout << "potential gradient norm 2" << potential_norm_2 << endl;
-//         // cout << "potential value: " << potential_value << endl;
-        
-//         // calculate x_ii = x_i + alpha * d_i
-//         position_ii = line_search(position_i, g_i, d_i);
-
-//         // calculate d_ii = -g_ii + beta * d_i
-//         g_ii = calc_potential_gradient(position_ii);
-//         potential_norm_2 = calc_potential_gradient_norm_2(position_ii);
-//         double beta = potential_norm_2 / calc_potential_gradient_norm_2(g_i);
-//         d_ii = matrix_addition_d(g_ii, d_i, beta);
-
-//         // update potential value
-//         potential_value = calc_potential_value(position_ii);
-//     }
-
-//     //record final position
-//     for (int i = 0; i < position_ii.size(); i++) {
-//         position[i][0] = position_ii[i][0];
-//         position[i][1] = position_ii[i][1];
-//         position[i][2] = position_ii[i][2];
-//     }
-
-//     coordinates_output(BOX, coordinates_out_CG);
-//     cout << "[MD LOG] " << get_current_time() << "\tConjugated gradient optimization finished." << endl;
-// }
-
