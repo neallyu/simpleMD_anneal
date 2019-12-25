@@ -207,8 +207,6 @@ def interParticlePlot(path, input_filename):
     plt.clf()
 
 
-
-
 def mk_plot(path, filename, plot_function):
     print("[MD Script]", time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), "Plotting", filename)
     plot_function(path, filename)
@@ -220,7 +218,7 @@ if __name__ == "__main__":
     mk_plot(path, "energy.csv", energy_plot)
     mk_plot(path, "temperature.csv", temperature_plot)
     mk_plot(path, "particle.csv", particle_plot)
-    mk_plot(path, "potential_value.csv", potentialGradientNormPlot)
+    # mk_plot(path, "potential_value.csv", potentialGradientNormPlot)
     # mk_plot(path, "inter_distance.csv", interParticlePlot)
     # mk_plot(path, "coordinates.csv", ThreeDPlot)
     # mk_plot(path, "msd.csv", msd_plot)

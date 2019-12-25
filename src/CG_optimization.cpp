@@ -33,7 +33,7 @@ public:
 
     inline void conjugated_gradient_minimization(const double BOX);
 
-    inline void potential_value_output(double value, ofstream& fout);
+    inline void trend_output(double potential_value, double gradient_squaredNorm, ofstream& fout);
 
     inline void coordinates_output(const double BOX, ofstream& fout);
 
@@ -42,7 +42,7 @@ private:
     // vector<vector<double> > position;               // store the position of the particles
     double c1;                                      // constant in Wolfe line search
     double c2;                                      // constant in Wolfe line search 0 < c1 < c2 < 1
-    ofstream potential_value_out;                   // output file stream of potential gradient norm
+    ofstream trend_out;                             // output file stream of potential gradient norm
     ofstream coordinates_out_CG;                    // output file stream of coordinates after CG optimization
 };
 
@@ -52,21 +52,21 @@ CG::CG(string _output_path, MatrixXd& ensemble):
     c1(1e-4),
     c2(2e-4),
     coordinates_out_CG(_output_path + "/coordinates_after_CG.cif"),
-    potential_value_out(_output_path + "/potential_value.csv")
+    trend_out(_output_path + "/trend.csv")
     { }
 
 
 CG::~CG() {
     coordinates_out_CG.close();
-    potential_value_out.close();
+    trend_out.close();
 }
 
 
 MatrixXd CG::calc_potential_gradient(MatrixXd& position) {
-    MatrixXd gradient(position.size(), 3);
+    MatrixXd gradient(position.rows(), 3);
     #pragma omp parallel for
-    for (int i = 0; i < position.size() - 1; ++i) {
-        for (int j = i + 1; j < position.size(); ++j) {
+    for (int i = 0; i < position.rows() - 1; ++i) {
+        for (int j = i + 1; j < position.rows(); ++j) {
             double dx = position(i, 0) - position(j, 0);
             double dy = position(i, 1) - position(j, 1);
             double dz = position(i, 2) - position(j, 2);
@@ -91,8 +91,8 @@ MatrixXd CG::calc_potential_gradient(MatrixXd& position) {
 double CG::calc_potential_value(MatrixXd &position) {
     double potential_value(0);
     #pragma omp parallel for
-    for (int i = 0; i < position.size() - 1; ++i) {
-        for (int j = i + 1; j < position.size(); ++j) {
+    for (int i = 0; i < position.rows() - 1; ++i) {
+        for (int j = i + 1; j < position.rows(); ++j) {
             double dx = position(i, 0) - position(j, 0);
             double dy = position(i, 1) - position(j, 1);
             double dz = position(i, 2) - position(j, 2);
@@ -115,8 +115,8 @@ MatrixXd CG::update_direction(MatrixXd& d_i, MatrixXd& g_ii, MatrixXd& g_i) {
 
 MatrixXd CG::line_search(MatrixXd& position, MatrixXd& g_i, MatrixXd& d_i) {
     // calculate the constant in the line search of this time
-    double alpha_step_size(1e-8);
-    double alpha(alpha_step_size);
+    double alpha_step_size(1e-6);
+    double alpha(1);
     double potential_value = calc_potential_value(position);
     // the sum of diagonal elements, which is x1 * d_x1 + y1 * d_y1 + z1 * d_z1 + ...
     double constant = (g_i.transpose() * d_i).trace();
@@ -128,11 +128,18 @@ MatrixXd CG::line_search(MatrixXd& position, MatrixXd& g_i, MatrixXd& d_i) {
     double position_search_abs = fabs((calc_potential_gradient(position_search).transpose() * d_i).trace());
 
     while (potential_search_value > potential_value + alpha * c1 * constant || position_search_abs > c2 * constant_abs) {
-        alpha += alpha_step_size;
+        cout << "line searching: " << alpha << "\r" << flush;
+        alpha -= alpha_step_size;
+        if (alpha <= 0) {
+            alpha = alpha_step_size;
+            position_search = position + alpha * d_i;
+            break;
+        }
         position_search = position + alpha * d_i;
         potential_search_value = calc_potential_value(position_search);
         position_search_abs = fabs((calc_potential_gradient(position_search).transpose() * d_i).trace());
     }
+    cout << endl;
     return position_search;
 }
 
@@ -140,7 +147,7 @@ MatrixXd CG::line_search(MatrixXd& position, MatrixXd& g_i, MatrixXd& d_i) {
 void CG::conjugated_gradient_minimization(const double BOX) {
     cout << "[MD LOG] " << get_current_time() << "\tConjugated gradient optimization started..." << endl;
     // initialize
-    double precision_2(1);
+    double precision_2(1e-3);
     MatrixXd position_i(position);
     MatrixXd g_i = calc_potential_gradient(position);
     MatrixXd d_i = -1 * g_i;
@@ -148,21 +155,21 @@ void CG::conjugated_gradient_minimization(const double BOX) {
     MatrixXd d_ii(d_i);
     MatrixXd g_ii(g_i);
     double potential_value = calc_potential_value(position_ii);
-    double potential_squaredNorm = g_ii.squaredNorm();
+    double gradient_squaredNorm = g_ii.squaredNorm();
 
     cout << "potential value: " << potential_value << endl;
-    cout << "potential gradient squared norm: " << potential_squaredNorm << endl;
+    cout << "gradient squared norm: " << gradient_squaredNorm << endl;
     cout << "precision2: " << precision_2 << endl;
-    potential_value_output(potential_value, potential_value_out);
+    trend_output(potential_value, gradient_squaredNorm, trend_out);
 
     // minimal condition is the norm of gradient of fx closes to zero
-    while (potential_squaredNorm > precision_2) {
+    while (gradient_squaredNorm > precision_2) {
         position_ii = line_search(position_i, g_i, d_i);
         g_ii = calc_potential_gradient(position_ii);
         d_ii = update_direction(d_i, g_ii, g_i);
-        potential_squaredNorm = g_ii.squaredNorm();
+        gradient_squaredNorm = g_ii.squaredNorm();
         potential_value = calc_potential_value(position_ii);
-        potential_value_output(potential_value, potential_value_out);
+        trend_output(potential_value, gradient_squaredNorm, trend_out);
     }
 
     //record final position
@@ -172,8 +179,8 @@ void CG::conjugated_gradient_minimization(const double BOX) {
 }
 
 
-void CG::potential_value_output(double value, ofstream& fout) {
-    fout << value << endl;
+void CG::trend_output(double potential_value, double gradient_squaredNorm, ofstream& fout) {
+    fout << potential_value << "    " << gradient_squaredNorm << endl;
 }
 
 

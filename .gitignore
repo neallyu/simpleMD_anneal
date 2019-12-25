@@ -2,7 +2,7 @@
 *.json
 .vs/*
 src/main
-src/conjugated_gradient_optimization
+src/CG_optimization
 test
 output*
 script/venv/*
