@@ -32,6 +32,7 @@ public:
     // lattice position
     inline void lattice_pos_box();
     inline void lattice_pos_sphere();
+    inline void randomInit();
 
     // calculation acceleration between a pair of particles
     inline void calc_acceleration(Particle& particle1, Particle& particle2);
@@ -42,8 +43,10 @@ public:
 
     inline double temperature_decreasing_curve(unsigned long i);
 
+    inline double temperature_decreasing_linear(unsigned long i);
+
     // correct the instaneous temperature by rescaling
-    inline void rescale_temperature(double target_TEMP);
+    inline void rescale_temperature(double target_TEMP, unsigned long i);
 
     inline void Andersen_thermostat(double targetTEMP, double collision_frequency);
 
@@ -82,7 +85,7 @@ private:
     ofstream particle_out;                          // output file stream of trajectory of selected particle
     ofstream temperature_out;                       // output file stream of temperature
     ofstream coordinates_out;                       // output file stream of coordinates of particles
-
+    ofstream scale_factor_out;
     ofstream inter_distance_out;                    // output file stream of inter particle distance summary
 };
 
@@ -106,7 +109,8 @@ Ensemble::Ensemble(const unsigned _particle_number, double _box, double init_tem
     particle_out(_output_path + "/particle.csv"),
     temperature_out(_output_path + "/temperature.csv"),
     coordinates_out(_output_path + "/coordinates.cif"),
-    inter_distance_out(_output_path + "/inter_distance.csv")
+    inter_distance_out(_output_path + "/inter_distance.csv"),
+    scale_factor_out(_output_path + "/scale_factor.csv")
     {
         cout << "[MD LOG] " << get_current_time() << "\tEquilibration iteration: " << EQUILIBRATION_ITERATION << endl;
         cout << "[MD LOG] " << get_current_time() << "\tIteration: " << ITERATION << endl;
@@ -123,8 +127,9 @@ Ensemble::Ensemble(const unsigned _particle_number, double _box, double init_tem
         omp_set_num_threads(32);
 
         // lattice_pos_box();
-        lattice_pos_sphere();
-        rescale_temperature(INIT_TEMP);
+        // lattice_pos_sphere();
+        randomInit();
+        rescale_temperature(INIT_TEMP, 0);
 
         // Initialize acceleartion in step A
         for (auto particle1 = ensemble.begin(); particle1 != ensemble.end(); ++particle1) {
@@ -160,6 +165,7 @@ Ensemble::~Ensemble() {
     temperature_out.close();
     coordinates_out.close();
     inter_distance_out.close();
+    scale_factor_out.close();
     cout << "[MD LOG] " << get_current_time() << "\tOutput file saved" << endl;
 }
 
@@ -211,6 +217,29 @@ void Ensemble::lattice_pos_box() {
 void Ensemble::lattice_pos_sphere() {
     lattice_pos_box();
     recenter_sphere();
+}
+
+
+void Ensemble::randomInit() {
+    default_random_engine random_generator;
+    uniform_real_distribution<double> displacement(1, BOX-1);
+    uniform_real_distribution<double> velocity(-1, 1);
+    for (int i = 0; i < particle_number; i++) {
+        ensemble[i].pos_x = displacement(random_generator);
+        ensemble[i].pos_y = displacement(random_generator);
+        ensemble[i].pos_z = displacement(random_generator);
+        ensemble[i].v_x = velocity(random_generator);
+        ensemble[i].v_y = velocity(random_generator);
+        ensemble[i].v_z = velocity(random_generator);
+        for (int j = 0; j < i; j++) {
+            double distance_2 = distance2(ensemble[i], ensemble[j]);
+            // to avoid particle distance being too close
+            if (distance_2 < 0.5) {
+                i--;
+                break;
+            }
+        }
+    }
 }
 
 
@@ -364,7 +393,7 @@ void Ensemble::recenter_sphere() {
 }
 
 
-void Ensemble::rescale_temperature(double targetTemp) {
+void Ensemble::rescale_temperature(double targetTemp, unsigned long i) {
     double sumv_x(0.0), sumv_y(0.0), sumv_z(0.0);
     double sumv2(0.0);
     for (auto particle = ensemble.begin(); particle != ensemble.end(); ++particle) {
@@ -379,6 +408,9 @@ void Ensemble::rescale_temperature(double targetTemp) {
     sumv2 /= particle_number;
     TEMP = sumv2 / 3;
     double fs = sqrt(targetTemp / TEMP);
+    if (i % 1000 == 0) {
+        scale_factor_out << sumv_x << "    " << sumv_y << "    " << sumv_z << "    " << sumv2 << "    " << fs << endl;
+    }
     for (auto particle = ensemble.begin(); particle != ensemble.end(); ++particle) {
         particle->v_x = (particle->v_x - sumv_x) * fs;
         particle->v_y = (particle->v_y - sumv_y) * fs;
@@ -405,6 +437,11 @@ void Ensemble::Andersen_thermostat(double target_TEMP, double collision_frequenc
 
 double Ensemble::temperature_decreasing_curve(unsigned long i) {
     return pow(EQUILIBRATION_ITERATION - i, 2) * INIT_TEMP / EQUILIBRATION_ITERATION_2;
+}
+
+
+double Ensemble::temperature_decreasing_linear(unsigned long i) {
+    return (EQUILIBRATION_ITERATION - i) * INIT_TEMP / EQUILIBRATION_ITERATION + 1e-3;
 }
 
 
@@ -463,7 +500,8 @@ void Ensemble::iteration() {
         ensemble_kinetic = 0;
         ensemble_potential = 0;
 
-        double temp = temperature_decreasing_curve(i);
+        // double temp = temperature_decreasing_curve(i);
+        double temp = temperature_decreasing_linear(i);
 
         // calculate acceleration of step B
         #pragma omp parallel for
@@ -484,9 +522,9 @@ void Ensemble::iteration() {
             // execute x and v propagation
             ensemble[i].movement();
             ensemble[i].velocity();
-            if (temp > 1e-1) {
-                // box_boundary(ensemble[i]);
-                sphere_boundary(ensemble[i]);
+            if (temp > 1) {
+                box_boundary(ensemble[i]);
+                // sphere_boundary(ensemble[i]);
             }
             // record a_A and initialize a_B
             ensemble[i].a_x_A = ensemble[i].a_x_B;
@@ -511,7 +549,7 @@ void Ensemble::iteration() {
             particle_movement_output(i, ensemble[1], particle_out);
             energy_output(i, ensemble_out);
             temperature_output(i, temperature_out);
-            inter_distance_output(i, inter_distance_out);
+            // inter_distance_output(i, inter_distance_out);
         }
 
         // decrease the temperature following a parabolic curve
@@ -519,7 +557,7 @@ void Ensemble::iteration() {
             if (temp > 1) {
                 Andersen_thermostat(temp, 0.5);
             } else {
-                rescale_temperature(temp);
+                rescale_temperature(temp, i);
             }
         }
 
